@@ -4,8 +4,11 @@
 class QLineEdit;
 class QPushButton;
 
-/// Global directory selector: LineEdit | Browse button.
-/// Emits directoryChanged(path) whenever a valid directory is committed.
+/// Global directory selector: LineEdit | Browse | Load from Directory
+///
+/// Signals:
+///   directoryChanged(path)  – valid dir committed via Browse or Enter
+///   loadRequested()         – Load-button clicked (triggers AleaVue scan)
 class DirBar : public QWidget
 {
     Q_OBJECT
@@ -17,12 +20,14 @@ public:
 
 signals:
     void directoryChanged(const QString& path);
+    void loadRequested();
 
 private slots:
     void onBrowse();
-    void onTextCommitted();
+    void onEnter();   ///< v0.5.00: Enter in LineEdit = same as Browse result
 
 private:
     QLineEdit*   m_lineEdit;
     QPushButton* m_btnBrowse;
+    QPushButton* m_btnLoad;
 };

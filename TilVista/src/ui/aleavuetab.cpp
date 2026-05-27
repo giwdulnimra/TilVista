@@ -1,6 +1,8 @@
 #include "aleavuetab.h"
 #include "dirdatabasepanel.h"
+#include "reviewdbpanel.h"
 #include "slideshowwindow.h"
+#include "core/config.h"
 #include "core/pathutils.h"
 #include "workers/scanworker.h"
 
@@ -14,15 +16,19 @@
 #include <QThread>
 #include <QVBoxLayout>
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-static void pbStart(QProgressBar* pb) { pb->setRange(0,100); pb->setValue(0); pb->setVisible(true); }
-static void pbDone (QProgressBar* pb) { pb->setRange(0,100); pb->setValue(100); pb->setVisible(false); }
+static void pbStart(QProgressBar* pb)
+{ pb->setRange(0,100); pb->setValue(0); pb->setVisible(true); }
+static void pbDone(QProgressBar* pb)
+{ pb->setRange(0,100); pb->setValue(100); pb->setVisible(false); }
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-AleaVueTab::AleaVueTab(std::function<QString()> getGlobalDir, QWidget* parent)
-    : QWidget(parent), m_getGlobalDir(std::move(getGlobalDir))
+AleaVueTab::AleaVueTab(std::function<QString()> getGlobalDir,
+                        ReviewDBPanel*           reviewDb,
+                        QWidget*                 parent)
+    : QWidget(parent)
+    , m_getGlobalDir(std::move(getGlobalDir))
+    , m_reviewDb(reviewDb)
 {
     buildUi();
 }
@@ -41,19 +47,12 @@ void AleaVueTab::buildUi()
     lv->addWidget(m_lblStatus);
 
     m_pb = new QProgressBar;
-    m_pb->setFixedHeight(7);
-    m_pb->setTextVisible(false);
-    m_pb->setVisible(false);
+    m_pb->setFixedHeight(7); m_pb->setTextVisible(false); m_pb->setVisible(false);
     lv->addWidget(m_pb);
 
-    m_btnLoadDir = new QPushButton("📂  Load from Directory");
-    m_btnLoadDir->setToolTip("Scan selected directory for images");
-    connect(m_btnLoadDir, &QPushButton::clicked,
-            this, &AleaVueTab::onLoadFromDirectory);
-    lv->addWidget(m_btnLoadDir);
-
+    // v0.5.00: no Load-Dir button here – it lives in DirBar
     m_chkFullscreen = new QCheckBox("Fullscreen");
-    m_chkFullscreen->setChecked(true);
+    m_chkFullscreen->setChecked(Config::getBool("fullscreen_slideshow"));
     lv->addWidget(m_chkFullscreen);
 
     m_btnStart = new QPushButton("▶  Start AleaVue");
@@ -65,7 +64,7 @@ void AleaVueTab::buildUi()
     lv->addStretch();
     outer->addWidget(left, 1);
 
-    // ── Right: DB panel ──────────────────────────────────────────────────────
+    // ── Right: kaivo DB panel ─────────────────────────────────────────────────
     m_dbPanel = new DirDatabasePanel(m_getGlobalDir);
     connect(m_dbPanel, &DirDatabasePanel::dirLoaded,
             this, &AleaVueTab::onDbDirLoaded);
@@ -81,9 +80,7 @@ void AleaVueTab::onDirectoryChanged(const QString& path)
     m_lblStatus->setText(QString("Dir set: %1").arg(path));
 }
 
-// ── Slots ─────────────────────────────────────────────────────────────────────
-
-void AleaVueTab::onLoadFromDirectory()
+void AleaVueTab::loadFromDirectory()
 {
     const QString path = m_getGlobalDir();
     if (path.isEmpty() || !QDir(path).exists()) {
@@ -94,18 +91,19 @@ void AleaVueTab::onLoadFromDirectory()
     scanDir(path);
 }
 
+// ── Slots ─────────────────────────────────────────────────────────────────────
+
 void AleaVueTab::onDbDirLoaded(const QString& path,
                                 const QStringList& imageFiles,
                                 const QStringList& allFiles)
 {
     emit requestDirChange(path);
-
     if (!imageFiles.isEmpty()) {
         m_imagePaths = imageFiles;
         m_allFiles   = allFiles;
         m_lastScannedPath = path;
         m_lblStatus->setText(
-            QString("✓  %1 images (from cache)  –  %2")
+            QString("✓  %1 images (cache)  –  %2")
                 .arg(imageFiles.size()).arg(path));
     } else {
         m_lblStatus->setText(
@@ -120,7 +118,6 @@ void AleaVueTab::onScanDone(bool ok,
 {
     pbDone(m_pb);
     m_btnStart->setEnabled(true);
-    m_btnLoadDir->setEnabled(true);
     m_scanThread = nullptr;
 
     if (ok) {
@@ -140,12 +137,11 @@ void AleaVueTab::onScanThenOpen(bool ok,
 {
     pbDone(m_pb);
     m_btnStart->setEnabled(true);
-    m_btnLoadDir->setEnabled(true);
     m_scanThread = nullptr;
 
     if (!ok || imageFiles.isEmpty()) {
         QMessageBox::warning(this, "No Images",
-                             "No image files found in the selected directory.");
+                             "No image files found.");
         return;
     }
     m_imagePaths = imageFiles;
@@ -166,15 +162,12 @@ void AleaVueTab::onStartSlideshow()
         openWindow(dir, m_imagePaths);
         return;
     }
-    // Lazy scan then open
     pbStart(m_pb);
     m_btnStart->setEnabled(false);
-    m_btnLoadDir->setEnabled(false);
 
     auto* worker = new ScanWorker(dir);
     auto* thread = new QThread;
     m_scanThread = thread;
-
     worker->moveToThread(thread);
     connect(thread, &QThread::started,  worker, &ScanWorker::run);
     connect(worker, &ScanWorker::progressChanged, m_pb, &QProgressBar::setValue);
@@ -191,16 +184,13 @@ void AleaVueTab::onStartSlideshow()
 void AleaVueTab::scanDir(const QString& path)
 {
     pbStart(m_pb);
-    m_pb->setValue(0);
     m_btnStart->setEnabled(false);
-    m_btnLoadDir->setEnabled(false);
     m_lblStatus->setText(QString("Scanning: %1 …").arg(path));
     m_lastScannedPath = path;
 
     auto* worker = new ScanWorker(path);
     auto* thread = new QThread;
     m_scanThread = thread;
-
     worker->moveToThread(thread);
     connect(thread, &QThread::started,  worker, &ScanWorker::run);
     connect(worker, &ScanWorker::progressChanged, m_pb, &QProgressBar::setValue);
@@ -216,7 +206,9 @@ void AleaVueTab::openWindow(const QString& directory,
                               const QStringList& imagePaths)
 {
     m_slideshowWindow = new SlideshowWindow(
-        directory, imagePaths, TV::logDir(), /*log=*/false);
+        directory, imagePaths,
+        TV::logDir(), /*logErrors=*/false,
+        m_reviewDb);
 
     if (m_chkFullscreen->isChecked())
         m_slideshowWindow->showFullScreen();

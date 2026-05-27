@@ -2,6 +2,7 @@
 #include "aleavuetab.h"
 #include "dirdatabasepanel.h"
 #include "dirbar.h"
+#include "reviewdbpanel.h"
 #include "sattumapictab.h"
 
 #include <QTabWidget>
@@ -11,8 +12,8 @@
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle("TilVista  –  v0.4.0");
-    setMinimumSize(800, 560);
+    setWindowTitle("TilVista  –  v0.5.10");
+    setMinimumSize(840, 580);
 
     auto* central = new QWidget;
     setCentralWidget(central);
@@ -20,26 +21,39 @@ MainWindow::MainWindow(QWidget* parent)
     mv->setContentsMargins(8, 8, 8, 8);
     mv->setSpacing(4);
 
-    // ── Global directory bar ─────────────────────────────────────────────────
+    // ── Global directory bar (v0.5.00: Browse | Load from Directory) ─────────
     m_dirBar = new DirBar;
     connect(m_dirBar, &DirBar::directoryChanged,
             this, &MainWindow::onDirChanged);
     mv->addWidget(m_dirBar);
 
-    // ── Tabs ─────────────────────────────────────────────────────────────────
+    // ── Shared ReviewDB (DB2) – lives here, displayed inside SattumaPicTab ───
+    m_reviewDb = new ReviewDBPanel(this);
+
+    // ── Tabs ──────────────────────────────────────────────────────────────────
     m_tabs = new QTabWidget;
 
-    m_aleaVueTab    = new AleaVueTab(   [this]{ return m_dirBar->directory(); });
-    m_sattumaPicTab = new SattumaPicTab([this]{ return m_dirBar->directory(); });
+    m_aleaVueTab = new AleaVueTab(
+        [this]{ return m_dirBar->directory(); },
+        m_reviewDb);
 
-    // When the DB panel loads a dir: sync DirBar + forward cached files
+    m_sattumaPicTab = new SattumaPicTab(
+        [this]{ return m_dirBar->directory(); },
+        m_reviewDb);
+
+    // DirBar Load button → AleaVue scan
+    connect(m_dirBar, &DirBar::loadRequested,
+            m_aleaVueTab, &AleaVueTab::loadFromDirectory);
+
+    // AleaVue DB1 panel → sync DirBar + pass cached files to SattumaPic
     connect(m_aleaVueTab, &AleaVueTab::requestDirChange,
             this, &MainWindow::onDirFromDb);
     connect(m_aleaVueTab->dbPanel(), &DirDatabasePanel::dirLoaded,
-            this, &MainWindow::onDbFilesLoaded);
+            this, &MainWindow::onDb1FilesLoaded);
 
-    m_tabs->addTab(m_aleaVueTab,    "🖼   AleaVue  (Slideshow)");
-    m_tabs->addTab(m_sattumaPicTab, "🎲   SattumaPic  (Random File)");
+    // v0.5.00: tab labels without parenthetical descriptions
+    m_tabs->addTab(m_aleaVueTab,    "🖼  AleaVue");
+    m_tabs->addTab(m_sattumaPicTab, "🎲  SattumaPic");
     mv->addWidget(m_tabs);
 }
 
@@ -51,14 +65,13 @@ void MainWindow::onDirChanged(const QString& path)
 
 void MainWindow::onDirFromDb(const QString& path)
 {
-    // AleaVueTab notifies itself; we only need to update the bar
     m_dirBar->setDirectory(path);
+    // SattumaPic notified via onDb1FilesLoaded with cached all_files
 }
 
-void MainWindow::onDbFilesLoaded(const QString&     path,
-                                  const QStringList& /*imageFiles*/,
-                                  const QStringList& allFiles)
+void MainWindow::onDb1FilesLoaded(const QString&     path,
+                                   const QStringList& /*imageFiles*/,
+                                   const QStringList& allFiles)
 {
-    // Pass cached allFiles to SattumaPic so it doesn't need to rescan
     m_sattumaPicTab->onDirectoryChanged(path, allFiles);
 }

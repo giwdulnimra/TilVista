@@ -1,5 +1,7 @@
 #include "sattumapictab.h"
+#include "reviewdbpanel.h"
 #include "videopreviewwidget.h"
+#include "core/config.h"
 #include "core/pathutils.h"
 #include "workers/scanworker.h"
 
@@ -19,14 +21,19 @@
 
 #include <random>
 
-static void pbStart(QProgressBar* pb) { pb->setRange(0,100); pb->setValue(0); pb->setVisible(true); }
-static void pbDone (QProgressBar* pb) { pb->setRange(0,100); pb->setValue(100); pb->setVisible(false); }
+static void pbStart(QProgressBar* pb)
+{ pb->setRange(0,100); pb->setValue(0); pb->setVisible(true); }
+static void pbDone(QProgressBar* pb)
+{ pb->setRange(0,100); pb->setValue(100); pb->setVisible(false); }
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
 SattumaPicTab::SattumaPicTab(std::function<QString()> getGlobalDir,
-                              QWidget* parent)
-    : QWidget(parent), m_getGlobalDir(std::move(getGlobalDir))
+                              ReviewDBPanel*           reviewDb,
+                              QWidget*                 parent)
+    : QWidget(parent)
+    , m_getGlobalDir(std::move(getGlobalDir))
+    , m_reviewDb(reviewDb)
 {
     buildUi();
 }
@@ -35,15 +42,17 @@ void SattumaPicTab::buildUi()
 {
     auto* outer = new QHBoxLayout(this);
 
-    // ── Left: controls ───────────────────────────────────────────────────────
+    // ── Left: controls + DB2 ─────────────────────────────────────────────────
     auto* left = new QWidget;
-    left->setMaximumWidth(360);
+    left->setMaximumWidth(380);
     auto* lv = new QVBoxLayout(left);
     lv->setSpacing(6);
 
     auto* row1 = new QHBoxLayout;
     m_btnRandom   = new QPushButton("🎲  Random File");
     m_chkAutoPick = new QCheckBox("Auto-pick on dir select");
+    // v0.5.10: default from config (true by default)
+    m_chkAutoPick->setChecked(Config::getBool("auto_pick_on_dir_select"));
     connect(m_btnRandom, &QPushButton::clicked,
             this, &SattumaPicTab::onPickRandom);
     row1->addWidget(m_btnRandom);
@@ -56,14 +65,13 @@ void SattumaPicTab::buildUi()
     lv->addWidget(m_lblFile);
 
     m_pb = new QProgressBar;
-    m_pb->setFixedHeight(7);
-    m_pb->setTextVisible(false);
-    m_pb->setVisible(false);
+    m_pb->setFixedHeight(7); m_pb->setTextVisible(false); m_pb->setVisible(false);
     lv->addWidget(m_pb);
 
     auto* row2 = new QHBoxLayout;
     m_btnOpenFile = new QPushButton("📂  Open File");
     m_chkAutoOpen = new QCheckBox("Auto-open on random");
+    m_chkAutoOpen->setChecked(Config::getBool("auto_open_on_random"));
     m_btnOpenFile->setEnabled(false);
     connect(m_btnOpenFile, &QPushButton::clicked,
             this, &SattumaPicTab::onOpenFile);
@@ -71,16 +79,22 @@ void SattumaPicTab::buildUi()
     row2->addWidget(m_chkAutoOpen);
     lv->addLayout(row2);
 
-    m_btnOpenDir = new QPushButton("📁  Open File's Directory");
+    // v0.5.10: renamed + now highlights file in explorer
+    m_btnOpenDir = new QPushButton("📁  Select in File's Directory");
     m_btnOpenDir->setEnabled(false);
     connect(m_btnOpenDir, &QPushButton::clicked,
-            this, &SattumaPicTab::onOpenFileDir);
+            this, &SattumaPicTab::onSelectInDir);
     lv->addWidget(m_btnOpenDir);
+
+    // ── DB2 (ReviewDB) below file controls ────────────────────────────────────
+    lv->addWidget(m_reviewDb);
+    connect(m_reviewDb, &ReviewDBPanel::fileSelected,
+            this, &SattumaPicTab::onPreviewFromDb2);
 
     lv->addStretch();
     outer->addWidget(left);
 
-    // ── Right: preview ───────────────────────────────────────────────────────
+    // ── Right: preview ────────────────────────────────────────────────────────
     auto* right = new QWidget;
     auto* rv    = new QVBoxLayout(right);
     rv->setContentsMargins(4, 4, 4, 4);
@@ -109,7 +123,7 @@ void SattumaPicTab::buildUi()
 void SattumaPicTab::onDirectoryChanged(const QString& path,
                                         const QStringList& allFiles)
 {
-    m_allFiles = allFiles;   // may be empty
+    m_allFiles = allFiles;
     if (m_chkAutoPick->isChecked()) {
         if (!m_allFiles.isEmpty())
             onPickRandom();
@@ -128,20 +142,13 @@ void SattumaPicTab::onPickRandom()
                              "Please select a directory first.");
         return;
     }
-    if (m_allFiles.isEmpty()) {
-        scanAndPick(dir);
-        return;
-    }
+    if (m_allFiles.isEmpty()) { scanAndPick(dir); return; }
 
-    // Pick uniformly at random using <random>
     std::mt19937 rng(std::random_device{}());
     std::uniform_int_distribution<int> dist(0, m_allFiles.size() - 1);
-    m_randomFile = m_allFiles.at(dist(rng));
-
-    m_lblFile->setText(m_randomFile);
-    m_btnOpenFile->setEnabled(true);
-    m_btnOpenDir->setEnabled(true);
-    updatePreview(m_randomFile);
+    const QString picked = m_allFiles.at(dist(rng));
+    m_randomFile = picked;
+    displayFile(picked);
 
     if (m_chkAutoOpen->isChecked())
         onOpenFile();
@@ -165,10 +172,17 @@ void SattumaPicTab::onOpenFile()
         TV::openPath(m_randomFile);
 }
 
-void SattumaPicTab::onOpenFileDir()
+void SattumaPicTab::onSelectInDir()
 {
+    // v0.5.10: opens folder AND highlights the file
     if (!m_randomFile.isEmpty())
-        TV::openPath(QFileInfo(m_randomFile).absolutePath());
+        TV::selectInExplorer(m_randomFile);
+}
+
+void SattumaPicTab::onPreviewFromDb2(const QString& path)
+{
+    m_randomFile = path;
+    displayFile(path);
 }
 
 // ── Private ───────────────────────────────────────────────────────────────────
@@ -179,7 +193,6 @@ void SattumaPicTab::scanAndPick(const QString& path)
     auto* worker = new ScanWorker(path);
     auto* thread = new QThread;
     m_scanThread = thread;
-
     worker->moveToThread(thread);
     connect(thread, &QThread::started,  worker, &ScanWorker::run);
     connect(worker, &ScanWorker::progressChanged, m_pb, &QProgressBar::setValue);
@@ -191,11 +204,18 @@ void SattumaPicTab::scanAndPick(const QString& path)
     thread->start();
 }
 
+void SattumaPicTab::displayFile(const QString& path)
+{
+    m_lblFile->setText(path);
+    m_btnOpenFile->setEnabled(true);
+    m_btnOpenDir->setEnabled(true);
+    updatePreview(path);
+}
+
 void SattumaPicTab::updatePreview(const QString& path)
 {
     const QString ext = '.' + QFileInfo(path).suffix().toLower();
 
-    // 1) Image
     if (TV::imageSuffixes().contains(ext)) {
         QImageReader reader(path);
         const QSize orig = reader.size();
@@ -213,20 +233,17 @@ void SattumaPicTab::updatePreview(const QString& path)
         }
     }
 
-    // 2) Video → VideoPreviewWidget handles all three tiers
     if (TV::videoSuffixes().contains(ext)) {
         m_preview->play(path);
         return;
     }
 
-    // 3) System icon fallback
     QFileIconProvider fip;
     const QIcon icon = fip.icon(QFileInfo(path));
-    if (!icon.isNull()) {
+    if (!icon.isNull())
         m_preview->showPixmap(icon.pixmap(QSize(128, 128)),
-                              QString("File  %1").arg(
-                                  ext.isEmpty() ? "(no ext)" : ext));
-    } else {
+                              QString("File  %1")
+                                  .arg(ext.isEmpty() ? "(no ext)" : ext));
+    else
         m_preview->clearPreview();
-    }
 }

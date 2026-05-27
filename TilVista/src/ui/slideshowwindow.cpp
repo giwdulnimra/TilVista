@@ -1,4 +1,5 @@
 #include "slideshowwindow.h"
+#include "reviewdbpanel.h"
 #include "core/pathutils.h"
 
 #include <QDir>
@@ -19,12 +20,14 @@ SlideshowWindow::SlideshowWindow(const QString&     directory,
                                   const QStringList& imagePaths,
                                   const QString&     logPath,
                                   bool               logErrors,
+                                  ReviewDBPanel*     reviewDb,
                                   QWidget*           parent)
     : QMainWindow(parent)
     , m_directory(directory)
     , m_imagePaths(imagePaths)
     , m_logPath(logPath)
     , m_logErrors(logErrors)
+    , m_reviewDb(reviewDb)
 {
     setWindowTitle("TilVista · AleaVue");
     setStyleSheet("background-color: black;");
@@ -51,17 +54,14 @@ SlideshowWindow::SlideshowWindow(const QString&     directory,
     connect(m_timer, &QTimer::timeout, this, &SlideshowWindow::changeImage);
     m_timer->start();
 
-    changeImage();   // show first image immediately
+    changeImage();
 }
-
-// ── Event overrides ───────────────────────────────────────────────────────────
 
 void SlideshowWindow::resizeEvent(QResizeEvent* event)
 {
     QMainWindow::resizeEvent(event);
-    const QSize s = event->size();
-    m_showW = s.width();
-    m_showH = s.height();
+    m_showW = event->size().width();
+    m_showH = event->size().height();
     m_ratio = double(m_showW) / double(m_showH);
 }
 
@@ -80,19 +80,20 @@ void SlideshowWindow::keyPressEvent(QKeyEvent* event)
         goBack();
         break;
     case Qt::Key_Space:
-        m_timer->isActive() ? m_timer->stop()
-                            : m_timer->start(kIntervalMs);
+        m_timer->isActive() ? m_timer->stop() : m_timer->start(kIntervalMs);
+        break;
+    case Qt::Key_S:
+        // v0.5.00: S = bookmark (was Enter in v0.4.x)
+        saveBookmark(m_current);
         break;
     case Qt::Key_Return:
     case Qt::Key_Enter:
-        saveBookmark(m_current);
+        // Reserved – no action in v0.5.x
         break;
     default:
         QMainWindow::keyPressEvent(event);
     }
 }
-
-// ── Private slots / helpers ───────────────────────────────────────────────────
 
 void SlideshowWindow::changeImage()
 {
@@ -107,7 +108,7 @@ void SlideshowWindow::changeImage()
         displayImage(img);
     } else {
         ++m_backtrack;
-        const int idx = m_imageOrder.size() + m_backtrack;  // backtrack is negative
+        const int idx = m_imageOrder.size() + m_backtrack;
         if (idx >= 0 && idx < m_imageOrder.size())
             displayImage(m_imageOrder.at(idx));
         else {
@@ -120,7 +121,6 @@ void SlideshowWindow::changeImage()
 void SlideshowWindow::displayImage(const QString& path)
 {
     m_current = path;
-
     QImageReader reader(path);
     const QSize orig = reader.size();
     if (orig.isValid() && (orig.width() > m_showW || orig.height() > m_showH)) {
@@ -129,14 +129,12 @@ void SlideshowWindow::displayImage(const QString& path)
         reader.setScaledSize(QSize(int(orig.width()  * scale),
                                    int(orig.height() * scale)));
     }
-
     const QImage image = reader.read();
     if (image.isNull()) {
         logError(path, reader.errorString());
         changeImage();
         return;
     }
-
     QPixmap pm = QPixmap::fromImage(image);
     if (double(pm.width()) / double(pm.height()) > m_ratio)
         pm = pm.scaledToWidth(m_showW, Qt::SmoothTransformation);
@@ -144,8 +142,6 @@ void SlideshowWindow::displayImage(const QString& path)
         pm = pm.scaledToHeight(m_showH - 18, Qt::SmoothTransformation);
 
     m_label->setPixmap(pm);
-
-    // Reset timer so each image gets the full interval
     m_timer->stop();
     m_timer->start(kIntervalMs);
     TV::preventSleep();
@@ -159,22 +155,14 @@ void SlideshowWindow::goBack()
     if (idx >= 0 && idx < m_imageOrder.size())
         displayImage(m_imageOrder.at(idx));
     else
-        ++m_backtrack;   // clamp at start
+        ++m_backtrack;  // clamp at start
 }
 
 void SlideshowWindow::saveBookmark(const QString& path)
 {
-    QDir().mkpath(m_logPath);
-    QFile f(m_logPath + "/reviewpics.txt");
-    if (!f.open(QIODevice::ReadWrite | QIODevice::Text)) return;
-
-    QTextStream in(&f);
-    const QString all = in.readAll();
-    if (!all.split('\n').contains(path)) {
-        f.seek(f.size());
-        QTextStream out(&f);
-        out << path << '\n';
-    }
+    // v0.5.10: write to ReviewDB (DB2) instead of flat .txt
+    if (!path.isEmpty() && m_reviewDb)
+        m_reviewDb->addBookmark(path, m_directory);
 }
 
 void SlideshowWindow::logError(const QString& path, const QString& error)
