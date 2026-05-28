@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-
+set(PROJ_NAME "TilVista")
 # ── Version ───────────────────────────────────────────────────────────────────
 # APPVERSION format: v{MAJOR}_{MINOR_2D}{PATCH_2D}
 set(TV_VERSION_MAJOR 0)
