@@ -7,21 +7,22 @@ class AleaVueTab;
 class DirDatabasePanel;
 class ShujukoPanel;
 class SattumaPicTab;
+class QLabel;
+class QShortcut;
 class QTabWidget;
 
 /// MainWindow – root widget.
 ///
-/// v0.5.30: Secret mode triggered by Alt+S+AltGr+L key sequence.
-///          State machine tracks: Alt → S → AltGr → L.
+/// v0.5.31:
+///   – Secret mode via QShortcut (Ctrl+Alt+F8), ApplicationShortcut context
+///     → fires regardless of which widget has keyboard focus.
+///   – Lock indicator: small 🔒/🔓 label in the status bar bottom-right.
+///   – Window title shows TV_APPVERSION_DISPLAY (e.g. "v0.05.31").
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget* parent = nullptr);
-
-protected:
-    void keyPressEvent(QKeyEvent* event) override;
-    void keyReleaseEvent(QKeyEvent* event) override;
 
 private slots:
     void onDirChanged(const QString& path);
@@ -31,19 +32,18 @@ private slots:
                           const QStringList& allFiles);
     void onActiveEntryChanged(const QString& entryName,
                                const QString& sourceDir);
+    void toggleSecretMode();   ///< triggered by Ctrl+Alt+F8 shortcut
 
 private:
-    void initSecretKeyState();
-    bool advanceSecretKey(int key, Qt::KeyboardModifiers mods);
+    void updateSecretIndicator();
 
     DirBar*        m_dirBar        = nullptr;
     QTabWidget*    m_tabs          = nullptr;
-    ShujukoPanel*  m_shujuko       = nullptr;   ///< shared between tabs
+    ShujukoPanel*  m_shujuko       = nullptr;
     AleaVueTab*    m_aleaVueTab    = nullptr;
     SattumaPicTab* m_sattumaPicTab = nullptr;
 
-    // v0.5.30 secret key state machine: Alt → S → AltGr → L
-    enum class SKState { Idle, GotAlt, GotS, GotAltGr };
-    SKState m_skState = SKState::Idle;
-    bool    m_secretMode = false;
+    QLabel*    m_secretIndicator = nullptr;   ///< lock icon in status bar
+    QShortcut* m_secretShortcut  = nullptr;
+    bool       m_secretMode      = false;
 };

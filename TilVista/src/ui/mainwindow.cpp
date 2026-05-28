@@ -5,20 +5,35 @@
 #include "shujukopanel.h"
 #include "sattumapictab.h"
 
-#include <QKeyEvent>
+#include <QLabel>
+#include <QShortcut>
+#include <QKeySequence>
+#include <QStatusBar>
 #include <QTabWidget>
 #include <QVBoxLayout>
 #include <QWidget>
 
-// TV_APPVERSION defined via CMake target_compile_definitions
-#ifndef TV_APPVERSION
-#  define TV_APPVERSION "v0_0530"
+// Injected by CMake target_compile_definitions
+#ifndef TV_APPVERSION_DISPLAY
+#  define TV_APPVERSION_DISPLAY "v0.05.31"
 #endif
+#ifndef TV_SEMVER
+#  define TV_SEMVER "0.5.31"
+#endif
+
+// ── Secret mode shortcut ──────────────────────────────────────────────────────
+// Ctrl+Alt+F8 works even when a text field has focus because we use
+// Qt::ApplicationShortcut context. Choose any F-key that's not in use by the
+// OS or the IDE: F5-F12 are generally free in desktop apps.
+// Change the key string here if needed (e.g. "Ctrl+Alt+F9").
+static const char* kSecretKeySeq = "Ctrl+Alt+F8";
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle(QString("TilVista  –  %1").arg(TV_APPVERSION));
+    // Display-friendly version in title: "TilVista  –  v0.05.31"
+    setWindowTitle(
+        QString("TilVista  \u2013  %1").arg(TV_APPVERSION_DISPLAY));
     setMinimumSize(860, 600);
 
     auto* central = new QWidget;
@@ -31,120 +46,103 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_dirBar, &DirBar::directoryChanged, this, &MainWindow::onDirChanged);
     mv->addWidget(m_dirBar);
 
-    // ── ShujukoPanel – shared between AleaVue (slideshow) and SattumaPic ─────
-    // Created here so it persists; placed visually inside SattumaPicTab.
-    // Deactivated (disabled) until a kaivo entry is explicitly loaded.
+    // ── ShujukoPanel – shared; displayed inside SattumaPicTab ─────────────────
     m_shujuko = new ShujukoPanel(this);
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
     m_tabs = new QTabWidget;
 
-    m_aleaVueTab    = new AleaVueTab(
+    m_aleaVueTab = new AleaVueTab(
         [this]{ return m_dirBar->directory(); }, m_shujuko);
     m_sattumaPicTab = new SattumaPicTab(
         [this]{ return m_dirBar->directory(); }, m_shujuko);
 
-    // DirBar Load → AleaVue scan
     connect(m_dirBar, &DirBar::loadRequested,
             m_aleaVueTab, &AleaVueTab::loadFromDirectory);
 
-    // kaivo DB1 panel signals
     DirDatabasePanel* db1 = m_aleaVueTab->dbPanel();
     connect(m_aleaVueTab, &AleaVueTab::requestDirChange,
             this, &MainWindow::onDirFromDb);
     connect(db1, &DirDatabasePanel::dirLoaded,
             this, &MainWindow::onDb1FilesLoaded);
-
-    // ── ShujukoPanel activation ───────────────────────────────────────────────
-    // When kaivo entry is loaded → activate shujuko with that entry
     connect(db1, &DirDatabasePanel::activeEntryChanged,
             this, &MainWindow::onActiveEntryChanged);
-
-    // When "Update Entry" fires → ask shujuko to validate its file list
     connect(db1, &DirDatabasePanel::requestShujukoValidation,
             m_shujuko, &ShujukoPanel::validateFiles);
 
-    // v0.5.30: propagate secret mode to DB1 panel
-    // (mainwindow handles the keysequence; calls db1->setSecretMode())
-
-    m_tabs->addTab(m_aleaVueTab,    "🖼  AleaVue");
-    m_tabs->addTab(m_sattumaPicTab, "🎲  SattumaPic");
+    m_tabs->addTab(m_aleaVueTab,    "\U0001f5bc  AleaVue");
+    m_tabs->addTab(m_sattumaPicTab, "\U0001f3b2  SattumaPic");
     mv->addWidget(m_tabs);
+
+    // ── Status bar: lock indicator (bottom-right) ─────────────────────────────
+    m_secretIndicator = new QLabel("\U0001f512");   // 🔒
+    m_secretIndicator->setToolTip(
+        QString("Secret Mode OFF\n"
+                "Shortcut: %1\n"
+                "Hides/shows hidden DB entries and enables "
+                "extra controls.").arg(kSecretKeySeq));
+    m_secretIndicator->setStyleSheet("font-size: 16px; padding: 2px 6px;");
+    statusBar()->addPermanentWidget(m_secretIndicator);
+    statusBar()->setSizeGripEnabled(false);
+
+    // ── Secret mode shortcut ──────────────────────────────────────────────────
+    // Qt::ApplicationShortcut fires even when a child widget (LineEdit) has focus.
+    m_secretShortcut = new QShortcut(
+        QKeySequence(QLatin1String(kSecretKeySeq)), this);
+    m_secretShortcut->setContext(Qt::ApplicationShortcut);
+    connect(m_secretShortcut, &QShortcut::activated,
+            this, &MainWindow::toggleSecretMode);
 }
 
 // ── Slots ─────────────────────────────────────────────────────────────────────
 
-void MainWindow::onDirChanged(const QString& path)
-{
+void MainWindow::onDirChanged(const QString& path) {
     m_aleaVueTab->onDirectoryChanged(path);
     m_sattumaPicTab->onDirectoryChanged(path);
 }
 
-void MainWindow::onDirFromDb(const QString& path)
-{
+void MainWindow::onDirFromDb(const QString& path) {
     m_dirBar->setDirectory(path);
 }
 
-void MainWindow::onDb1FilesLoaded(const QString&     path,
-                                   const QStringList& /*imageFiles*/,
-                                   const QStringList& allFiles)
-{
+void MainWindow::onDb1FilesLoaded(const QString& path,
+                                   const QStringList&,
+                                   const QStringList& allFiles) {
     m_sattumaPicTab->onDirectoryChanged(path, allFiles);
 }
 
 void MainWindow::onActiveEntryChanged(const QString& entryName,
-                                       const QString& sourceDir)
-{
-    // Activate or deactivate the ShujukoPanel
+                                       const QString& sourceDir) {
     m_shujuko->setActiveKaivoEntry(entryName, sourceDir);
 }
 
-// ── v0.5.30 Secret Key State Machine ─────────────────────────────────────────
-// Sequence: Alt(press) → S → AltGr → L
-// AltGr on Windows/Linux = Key_AltGr; also arrives as Ctrl+Alt on some layouts.
-// We accept either Key_AltGr or (Ctrl+Alt modifier set without a real key).
-
-void MainWindow::keyPressEvent(QKeyEvent* event)
-{
-    if (advanceSecretKey(event->key(), event->modifiers())) {
-        event->accept();
-        return;
-    }
-    QMainWindow::keyPressEvent(event);
+void MainWindow::toggleSecretMode() {
+    m_secretMode = !m_secretMode;
+    m_aleaVueTab->dbPanel()->setSecretMode(m_secretMode);
+    m_shujuko->setSecretMode(m_secretMode);
+    updateSecretIndicator();
 }
 
-void MainWindow::keyReleaseEvent(QKeyEvent* event)
-{
-    // Reset on Escape so a half-typed sequence doesn't lock things
-    if (event->key() == Qt::Key_Escape)
-        m_skState = SKState::Idle;
-    QMainWindow::keyReleaseEvent(event);
-}
-
-bool MainWindow::advanceSecretKey(int key, Qt::KeyboardModifiers mods)
-{
-    switch (m_skState) {
-    case SKState::Idle:
-        if (key == Qt::Key_Alt || mods.testFlag(Qt::AltModifier)) {
-            m_skState = SKState::GotAlt; return true;
-        }
-        break;
-    case SKState::GotAlt:
-        if (key == Qt::Key_S) { m_skState = SKState::GotS; return true; }
-        m_skState = SKState::Idle; break;
-    case SKState::GotS:
-        if (key == Qt::Key_AltGr ||
-            (mods.testFlag(Qt::ControlModifier) && mods.testFlag(Qt::AltModifier)))
-        { m_skState = SKState::GotAltGr; return true; }
-        m_skState = SKState::Idle; break;
-    case SKState::GotAltGr:
-        if (key == Qt::Key_L) {
-            m_skState    = SKState::Idle;
-            m_secretMode = !m_secretMode;
-            m_aleaVueTab->dbPanel()->setSecretMode(m_secretMode);
-            return true;
-        }
-        m_skState = SKState::Idle; break;
+void MainWindow::updateSecretIndicator() {
+    if (m_secretMode) {
+        m_secretIndicator->setText("\U0001f513");  // 🔓
+        m_secretIndicator->setToolTip(
+            QString("Secret Mode ON\n"
+                    "Shortcut: %1\n"
+                    "Hidden entries visible. "
+                    "Extra controls enabled.").arg(kSecretKeySeq));
+        m_secretIndicator->setStyleSheet(
+            "font-size:16px; padding:2px 6px; color: #e8a000;");
+    } else {
+        m_secretIndicator->setText("\U0001f512");  // 🔒
+        m_secretIndicator->setToolTip(
+            QString("Secret Mode OFF\n"
+                    "Shortcut: %1").arg(kSecretKeySeq));
+        m_secretIndicator->setStyleSheet(
+            "font-size:16px; padding:2px 6px;");
     }
-    return false;
+    // Brief status bar message
+    statusBar()->showMessage(
+        m_secretMode ? "Secret mode activated" : "Secret mode deactivated",
+        2500);
 }
