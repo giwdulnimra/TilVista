@@ -1,7 +1,6 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
   <qresource prefix="/">
-    <!-- Add icons here when available, e.g.: -->
-    <!-- <file>icons/tilvista.png</file> -->
+    <!-- Add icons here when available -->
   </qresource>
 </RCC>

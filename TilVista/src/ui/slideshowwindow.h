@@ -4,17 +4,12 @@
 
 class QLabel;
 class QTimer;
-class ReviewDBPanel;
+class ShujukoPanel;
 
 /// Full-screen (or windowed) random image slideshow.
 ///
-/// Keyboard controls (v0.5.00):
-///   Esc    – close
-///   →      – next image
-///   ←      – previous image (history)
-///   Space  – pause / resume timer
-///   S      – bookmark current image in ReviewDB (was Enter in v0.4.x)
-///   Enter  – reserved (no action)
+/// S key emits bookmarkAdded(path) which ShujukoPanel::addBookmark() handles.
+/// Enter key is reserved (no action).
 class SlideshowWindow : public QMainWindow
 {
     Q_OBJECT
@@ -23,8 +18,11 @@ public:
                     const QStringList& imagePaths,
                     const QString&     logPath,
                     bool               logErrors,
-                    ReviewDBPanel*     reviewDb,
+                    ShujukoPanel*      shujuko,
                     QWidget*           parent = nullptr);
+
+signals:
+    void bookmarkAdded(const QString& path);
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
@@ -36,25 +34,22 @@ private slots:
 private:
     void displayImage(const QString& path);
     void goBack();
-    void saveBookmark(const QString& path);   ///< → ReviewDBPanel::addBookmark
     void logError(const QString& path, const QString& error);
 
     QString     m_directory;
     QStringList m_imagePaths;
     QString     m_logPath;
     bool        m_logErrors;
-    ReviewDBPanel* m_reviewDb;   ///< shared, not owned
+    ShujukoPanel* m_shujuko;
 
-    QLabel*  m_label  = nullptr;
-    QTimer*  m_timer  = nullptr;
+    QLabel* m_label = nullptr;
+    QTimer* m_timer = nullptr;
 
     QStringList m_imageOrder;
     int         m_backtrack = 0;
     QString     m_current;
 
-    int    m_showW  = 1920;
-    int    m_showH  = 1080;
-    double m_ratio  = 16.0 / 9.0;
-
+    int    m_showW = 1920, m_showH = 1080;
+    double m_ratio = 16.0 / 9.0;
     static constexpr int kIntervalMs = 4500;
 };

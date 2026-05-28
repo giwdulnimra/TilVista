@@ -1,45 +1,24 @@
 #include "scanworker.h"
 #include "core/pathutils.h"
-
 #include <QDirIterator>
 #include <QFileInfo>
 
 ScanWorker::ScanWorker(const QString& directory, QObject* parent)
-    : QObject(parent), m_directory(directory)
-{}
+    : QObject(parent), m_directory(directory) {}
 
-void ScanWorker::run()
-{
-    QStringList imageFiles;
-    QStringList allFiles;
-
+void ScanWorker::run() {
+    QStringList all, img;
     try {
-        // Pass 1 – collect every file (for accurate progress)
-        {
-            QDirIterator it(m_directory,
-                            QDir::Files | QDir::NoDotAndDotDot,
-                            QDirIterator::Subdirectories);
-            while (it.hasNext()) {
-                it.next();
-                allFiles << it.filePath();
-            }
+        QDirIterator it(m_directory, QDir::Files|QDir::NoDotAndDotDot,
+                        QDirIterator::Subdirectories);
+        while (it.hasNext()) { it.next(); all << it.filePath(); }
+        const int total = all.isEmpty() ? 1 : all.size();
+        const auto& suf = TV::imageSuffixes();
+        for (int i = 0; i < all.size(); ++i) {
+            if (suf.contains('.' + QFileInfo(all[i]).suffix().toLower()))
+                img << all[i];
+            emit progressChanged((i+1)*100/total);
         }
-
-        const int total = allFiles.isEmpty() ? 1 : allFiles.size();
-        const auto& imgSuf = TV::imageSuffixes();
-
-        // Pass 2 – filter images, emit progress
-        for (int i = 0; i < allFiles.size(); ++i) {
-            const QString& fp  = allFiles.at(i);
-            const QString  ext = QFileInfo(fp).suffix().toLower().prepend('.');
-            if (imgSuf.contains(ext))
-                imageFiles << fp;
-            emit progressChanged(static_cast<int>((i + 1) * 100 / total));
-        }
-
-        emit resultReady(true, imageFiles, allFiles);
-    }
-    catch (...) {
-        emit resultReady(false, {}, {});
-    }
+        emit resultReady(true, img, all);
+    } catch (...) { emit resultReady(false, {}, {}); }
 }
