@@ -1,12 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 
 # ── Version ───────────────────────────────────────────────────────────────────
-# string(FORMAT ...) requires CMake 3.29 – use if/set for zero-padding instead.
-set(TV_VERSION_MAJOR 0)
-set(TV_VERSION_MINOR 5)
-set(TV_VERSION_PATCH 31)
+set(TV_VERSION_MAJOR  0)
+set(TV_VERSION_MINOR  5)
+set(TV_VERSION_PATCH 32)
 
-# Zero-pad minor and patch to 2 digits
 if(TV_VERSION_MINOR LESS 10)
     set(TV_MINOR_PAD "0${TV_VERSION_MINOR}")
 else()
@@ -18,18 +16,12 @@ else()
     set(TV_PATCH_PAD "${TV_VERSION_PATCH}")
 endif()
 
-# Internal ID: v0_0531  (used in file names, window title raw)
-set(APPVERSION "v${TV_VERSION_MAJOR}_${TV_MINOR_PAD}${TV_PATCH_PAD}")
-
-# Human-readable display: v0.05.31
+set(APPVERSION         "v${TV_VERSION_MAJOR}_${TV_MINOR_PAD}${TV_PATCH_PAD}")
 set(APPVERSION_DISPLAY "v${TV_VERSION_MAJOR}.${TV_MINOR_PAD}.${TV_PATCH_PAD}")
-
-# Full semver for Qt app metadata
-set(TV_SEMVER
-    "${TV_VERSION_MAJOR}.${TV_VERSION_MINOR}.${TV_VERSION_PATCH}")
+set(TV_SEMVER          "${TV_VERSION_MAJOR}.${TV_VERSION_MINOR}.${TV_VERSION_PATCH}")
 
 project(TilVista VERSION "${TV_SEMVER}" LANGUAGES CXX)
-message(STATUS "TilVista  VERSION=${APPVERSION_DISPLAY}")
+message(STATUS "TilVista  APPVERSION=${APPVERSION}  display=${APPVERSION_DISPLAY}")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -53,6 +45,8 @@ set(TV_SOURCES
     src/ui/aleavuetab.h         src/ui/aleavuetab.cpp
     src/ui/sattumapictab.h      src/ui/sattumapictab.cpp
     src/ui/slideshowwindow.h    src/ui/slideshowwindow.cpp
+    src/ui/shortcutstab.h       src/ui/shortcutstab.cpp
+    src/ui/madolodostab.h       src/ui/madolodostab.cpp
     src/ui/mainwindow.h         src/ui/mainwindow.cpp
     resources/resources.qrc
 )
@@ -60,7 +54,6 @@ set(TV_SOURCES
 add_executable(TilVista ${TV_SOURCES})
 target_include_directories(TilVista PRIVATE src)
 
-# ── Version defines available in C++ ─────────────────────────────────────────
 target_compile_definitions(TilVista PRIVATE
     TV_APPVERSION="${APPVERSION}"
     TV_APPVERSION_DISPLAY="${APPVERSION_DISPLAY}"

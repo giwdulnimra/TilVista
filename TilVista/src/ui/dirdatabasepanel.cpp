@@ -21,7 +21,7 @@
 #include <QThread>
 #include <QVBoxLayout>
 
-static void pbStart(QProgressBar* p, bool ind = true)
+static void pbStart(QProgressBar* p, bool ind=true)
 { p->setRange(ind?0:0, ind?0:100); if(!ind) p->setValue(0); p->setVisible(true); }
 static void pbDone(QProgressBar* p)
 { p->setRange(0,100); p->setValue(100); p->setVisible(false); }
@@ -43,24 +43,21 @@ DirDatabasePanel::DirDatabasePanel(std::function<QString()> getCurrentDir,
 
 // ── Public ────────────────────────────────────────────────────────────────────
 
-void DirDatabasePanel::updateCache(const QString&     path,
+void DirDatabasePanel::updateCache(const QString& path,
                                     const QStringList& imageFiles,
                                     const QStringList& allFiles)
 {
     m_lineName->setText(TV::autoEntryName(path));
     const QString stored = QDir(m_base).relativeFilePath(path);
-
     QJsonArray entries = m_db.value("entries").toArray();
     for (int i = 0; i < entries.size(); ++i) {
         QJsonObject e = entries[i].toObject();
         const QString resolved =
-            QDir::cleanPath(m_base + '/' + e.value("path").toString());
+            QDir::cleanPath(m_base+'/'+e.value("path").toString());
         if (resolved == QDir::cleanPath(path)) {
             e["scanned_at"] = QDateTime::currentDateTime().toString(Qt::ISODate);
-            entries[i] = e;
-            m_db["entries"] = entries;
-            writeCataloguesAndJson(e.value("name").toString(),
-                                   imageFiles, allFiles);
+            entries[i] = e; m_db["entries"] = entries;
+            writeCataloguesAndJson(e.value("name").toString(), imageFiles, allFiles);
             updateEntryInfo(e.value("name").toString());
             return;
         }
@@ -75,10 +72,11 @@ void DirDatabasePanel::setSecretMode(bool on)
     m_btnSecret->setVisible(on);
     refreshList();
     emit secretModeChanged(on);
-    m_lblStatus->setText(on ? "🔓  Secret mode active" : "🔒  Secret mode off");
+    m_lblStatus->setText(on ? "\U0001f513  Secret mode active"
+                            : "\U0001f512  Secret mode off");
 }
 
-// ── Slots – buttons ───────────────────────────────────────────────────────────
+// ── Button slots ──────────────────────────────────────────────────────────────
 
 void DirDatabasePanel::onSaveClicked()
 {
@@ -89,41 +87,27 @@ void DirDatabasePanel::onSaveClicked()
     QString name = m_lineName->text().trimmed();
     if (name.isEmpty()) name = TV::autoEntryName(path);
     m_lineName->setText(name);
-
     const QString stored = QDir(m_base).relativeFilePath(path);
-    const QString safe   = TV::safeFilename(name);
-    const QString imgF   = safe + "_img.dshow";
-    const QString allF   = safe + "_all.catalogue";
-    const QString ts     = QDateTime::currentDateTime().toString(Qt::ISODate);
-
+    const QString safe = TV::safeFilename(name);
+    const QString imgF = safe+"_img.dshow", allF = safe+"_all.catalogue";
+    const QString ts   = QDateTime::currentDateTime().toString(Qt::ISODate);
     QJsonArray entries = m_db.value("entries").toArray();
     bool found = false;
     for (int i = 0; i < entries.size(); ++i) {
         QJsonObject e = entries[i].toObject();
         if (e.value("name").toString() == name) {
-            e["path"]        = stored;
-            e["image_files"] = imgF;
-            e["all_files"]   = allF;
-            e["scanned_at"]  = ts;
-            // preserve hidden flag
-            entries[i] = e; found = true; break;
+            e["path"]=stored; e["image_files"]=imgF; e["all_files"]=allF;
+            e["scanned_at"]=ts; entries[i]=e; found=true; break;
         }
     }
     if (!found) {
-        QJsonObject e;
-        e["name"]        = name;
-        e["path"]        = stored;
-        e["image_files"] = imgF;
-        e["all_files"]   = allF;
-        e["scanned_at"]  = ts;
-        e["hidden"]      = false;
-        entries.append(e);
+        QJsonObject e; e["name"]=name; e["path"]=stored;
+        e["image_files"]=imgF; e["all_files"]=allF;
+        e["scanned_at"]=ts; e["hidden"]=false; entries.append(e);
     }
-    m_db["entries"] = entries;
-    m_pending.valid = false;
+    m_db["entries"] = entries; m_pending.valid = false;
     refreshList();
-    writeCataloguesAndJson(name,
-        m_pending.imageFiles, m_pending.allFiles);
+    writeCataloguesAndJson(name, m_pending.imageFiles, m_pending.allFiles);
 }
 
 void DirDatabasePanel::onLoadClicked()
@@ -136,61 +120,51 @@ void DirDatabasePanel::onDeleteClicked()
 {
     auto* item = m_listWidget->currentItem();
     if (!item) return;
-    const QString name = item->text();
-
+    const QString name = item->text().remove(QRegularExpression("^◌ "));
     QJsonArray entries = m_db.value("entries").toArray();
     for (int i = 0; i < entries.size(); ++i) {
         QJsonObject e = entries[i].toObject();
         if (e.value("name").toString() != name) continue;
-
-        // Delete catalogue files
-        for (const QString& key : {"image_files", "all_files"}) {
+        for (const QString& key : {"image_files","all_files"}) {
             const QString fn = e.value(key).toString();
-            if (!fn.isEmpty()) QFile::remove(m_kaivoDir + '/' + fn);
+            if (!fn.isEmpty()) QFile::remove(m_kaivoDir+'/'+fn);
         }
-        // Delete linked shujuko
         QFile::remove(TV::shujukoPath(name));
-
-        entries.removeAt(i);
-        break;
+        entries.removeAt(i); break;
     }
     m_db["entries"] = entries;
-    refreshList();
-    m_lblEntryInfo->clear();
-
-    // Deactivate shujuko if deleted entry was active
     if (m_activeEntryName == name) {
-        m_activeEntryName.clear();
-        emit activeEntryChanged({}, {});
+        m_activeEntryName.clear(); emit activeEntryChanged({},{});
     }
+    refreshList(); m_lblEntryInfo->clear();
     saveJsonOnly();
 }
 
 void DirDatabasePanel::onUpdateClicked()
 {
-    // v0.5.20: re-scan directory, update catalogues, keep shujuko intact
+    // Guard: don't start if already scanning
+    if (m_updThread) { m_lblStatus->setText("⚠  Already scanning…"); return; }
+
     auto* item = m_listWidget->currentItem();
     if (!item) { m_lblStatus->setText("⚠  Select an entry first."); return; }
-    const QString name = item->text();
+
+    // Strip decoration prefix added in refreshList
+    const QString name = item->text().remove(QRegularExpression("^◌ "));
+    m_updatingEntryName = name;   // store for use in callback
 
     QJsonArray entries = m_db.value("entries").toArray();
     for (const auto& v : entries) {
         const QJsonObject e = v.toObject();
         if (e.value("name").toString() != name) continue;
-
         const QString absPath =
-            QDir::cleanPath(m_base + '/' + e.value("path").toString());
+            QDir::cleanPath(m_base+'/'+e.value("path").toString());
         if (!QDir(absPath).exists()) {
-            m_lblStatus->setText("⚠  Directory not found: " + absPath);
-            return;
+            m_lblStatus->setText("⚠  Directory not found."); return;
         }
-        pbStart(m_pb, false);
-        m_btnUpdate->setEnabled(false);
+        pbStart(m_pb, false); m_btnUpdate->setEnabled(false);
         m_lblStatus->setText(QString("Updating: %1 …").arg(name));
-
         auto* worker = new ScanWorker(absPath);
-        auto* thread = new QThread;
-        m_updThread  = thread;
+        auto* thread = new QThread; m_updThread = thread;
         worker->moveToThread(thread);
         connect(thread, &QThread::started,  worker, &ScanWorker::run);
         connect(worker, &ScanWorker::progressChanged, m_pb, &QProgressBar::setValue);
@@ -202,49 +176,39 @@ void DirDatabasePanel::onUpdateClicked()
         thread->start();
         return;
     }
+    m_lblStatus->setText("⚠  Entry not found in DB.");
 }
 
 void DirDatabasePanel::onToggleHiddenClicked()
 {
-    // v0.5.30: only reachable in secret mode
     auto* item = m_listWidget->currentItem();
     if (!item) return;
-    const QString name = item->text();
-
+    const QString name = item->text().remove(QRegularExpression("^◌ "));
     QJsonArray entries = m_db.value("entries").toArray();
     for (int i = 0; i < entries.size(); ++i) {
         QJsonObject e = entries[i].toObject();
-        if (e.value("name").toString() == name) {
-            const bool nowHidden = !e.value("hidden").toBool(false);
-            e["hidden"] = nowHidden;
-            entries[i]  = e;
-            m_db["entries"] = entries;
-            saveJsonOnly();
-            refreshList();
-            m_lblStatus->setText(
-                nowHidden ? QString("👁  %1 hidden").arg(name)
-                          : QString("👁  %1 visible").arg(name));
-            return;
-        }
+        if (e.value("name").toString() != name) continue;
+        const bool nowHidden = !e.value("hidden").toBool(false);
+        e["hidden"] = nowHidden; entries[i] = e; m_db["entries"] = entries;
+        saveJsonOnly(); refreshList();
+        m_lblStatus->setText(nowHidden
+            ? QString("\U0001f441  %1 hidden").arg(name)
+            : QString("\U0001f441  %1 visible").arg(name));
+        return;
     }
 }
 
 void DirDatabasePanel::onItemDoubleClicked(QListWidgetItem* item)
-{
-    if (item) emitFromName(item->text());
-}
+{ if (item) emitFromName(item->text().remove(QRegularExpression("^◌ "))); }
 
-void DirDatabasePanel::onCurrentNameChanged(const QString& name)
-{
-    updateEntryInfo(name);
-}
+void DirDatabasePanel::onCurrentNameChanged(const QString& rawName)
+{ updateEntryInfo(rawName.trimmed().remove(QRegularExpression("^◌ "))); }
 
-// ── Slots – workers ───────────────────────────────────────────────────────────
+// ── Worker callbacks ──────────────────────────────────────────────────────────
 
 void DirDatabasePanel::onSaveDone(bool ok)
 {
-    pbDone(m_pb);
-    m_btnSave->setEnabled(true);
+    pbDone(m_pb); m_btnSave->setEnabled(true);
     m_lblStatus->setText(ok ? "✓  Saved." : "✗  Save failed.");
     if (m_thread) { m_thread->quit(); m_thread->deleteLater(); m_thread = nullptr; }
 }
@@ -262,24 +226,17 @@ void DirDatabasePanel::onCatalogueLoaded(bool ok,
                                           QStringList allFiles)
 {
     pbDone(m_pb);
-    if (m_catThread) {
-        m_catThread->quit(); m_catThread->deleteLater(); m_catThread = nullptr;
-    }
+    if (m_catThread) { m_catThread->quit(); m_catThread->deleteLater(); m_catThread = nullptr; }
     m_lblStatus->setText(ok
         ? QString("✓  %1 images loaded.").arg(imageFiles.size())
         : "⚠  Catalogue error – will rescan.");
-
-    // Find the source_dir for the active entry
     QString sourceDir;
-    const QJsonArray entries = m_db.value("entries").toArray();
-    for (const auto& v : entries) {
+    for (const auto& v : m_db.value("entries").toArray()) {
         const QJsonObject e = v.toObject();
         if (e.value("name").toString() == m_activeEntryName) {
-            sourceDir = QDir::cleanPath(m_base + '/' + e.value("path").toString());
-            break;
+            sourceDir = QDir::cleanPath(m_base+'/'+e.value("path").toString()); break;
         }
     }
-
     emit dirLoaded(m_pendingLoadPath, imageFiles, allFiles);
     emit activeEntryChanged(m_activeEntryName, sourceDir);
 }
@@ -288,34 +245,27 @@ void DirDatabasePanel::onUpdateScanDone(bool ok,
                                          QStringList imageFiles,
                                          QStringList allFiles)
 {
-    pbDone(m_pb);
-    m_btnUpdate->setEnabled(true);
+    pbDone(m_pb); m_btnUpdate->setEnabled(true);
     m_updThread = nullptr;
 
     if (!ok) { m_lblStatus->setText("✗  Update scan failed."); return; }
 
-    auto* item = m_listWidget->currentItem();
-    if (!item) return;
-    const QString name = item->text();
-
-    // Update catalogue files (shujuko is NOT touched)
-    writeCataloguesAndJson(name, imageFiles, allFiles);
-
-    // After update, ask ShujukoPanel to validate its file list
+    // Use the stored entry name – don't rely on currentItem() which may have changed
+    if (m_updatingEntryName.isEmpty()) return;
+    writeCataloguesAndJson(m_updatingEntryName, imageFiles, allFiles);
     emit requestShujukoValidation();
-
     m_lblStatus->setText(
         QString("✓  Updated: %1 img / %2 total.")
             .arg(imageFiles.size()).arg(allFiles.size()));
+    m_updatingEntryName.clear();
 }
 
-// ── Private ───────────────────────────────────────────────────────────────────
+// ── Private helpers ───────────────────────────────────────────────────────────
 
 void DirDatabasePanel::buildUi()
 {
     auto* lv = new QVBoxLayout(this);
-    lv->setContentsMargins(6, 6, 6, 6);
-    lv->setSpacing(4);
+    lv->setContentsMargins(6,6,6,6); lv->setSpacing(4);
 
     auto* hdr = new QLabel("kaivo  –  Directory Store");
     hdr->setStyleSheet("font-weight: bold; font-size: 11px;");
@@ -343,30 +293,25 @@ void DirDatabasePanel::buildUi()
     m_pb->setFixedHeight(7); m_pb->setTextVisible(false); m_pb->setVisible(false);
     lv->addWidget(m_pb);
 
-    // Row 1: Save / Load / Delete
     auto* row1 = new QHBoxLayout;
     m_btnSave   = new QPushButton("Save to DB");
     m_btnLoad   = new QPushButton("Load from DB");
     m_btnDelete = new QPushButton("Delete from DB");
-    for (auto* b : {m_btnSave, m_btnLoad, m_btnDelete}) row1->addWidget(b);
+    for (auto* b : {m_btnSave,m_btnLoad,m_btnDelete}) row1->addWidget(b);
     connect(m_btnSave,   &QPushButton::clicked, this, &DirDatabasePanel::onSaveClicked);
     connect(m_btnLoad,   &QPushButton::clicked, this, &DirDatabasePanel::onLoadClicked);
     connect(m_btnDelete, &QPushButton::clicked, this, &DirDatabasePanel::onDeleteClicked);
     lv->addLayout(row1);
 
-    // Row 2: Update (v0.5.20) + Secret toggle (v0.5.30, hidden)
     auto* row2 = new QHBoxLayout;
-    m_btnUpdate = new QPushButton("↺  Update Entry");
-    m_btnUpdate->setToolTip("Rescan directory, refresh catalogues (keeps shujuko)");
-    connect(m_btnUpdate, &QPushButton::clicked,
-            this, &DirDatabasePanel::onUpdateClicked);
+    m_btnUpdate = new QPushButton("\u21ba  Update Entry");
+    m_btnUpdate->setToolTip("Rescan directory, refresh catalogues. Keeps shujuko intact.");
+    connect(m_btnUpdate, &QPushButton::clicked, this, &DirDatabasePanel::onUpdateClicked);
     row2->addWidget(m_btnUpdate);
 
-    m_btnSecret = new QPushButton("👁  Toggle Hidden");
-    m_btnSecret->setToolTip("v0.5.30: show/hide this entry (secret mode only)");
-    m_btnSecret->setVisible(false);   // only visible in secret mode
-    connect(m_btnSecret, &QPushButton::clicked,
-            this, &DirDatabasePanel::onToggleHiddenClicked);
+    m_btnSecret = new QPushButton("\U0001f441  Toggle Hidden");
+    m_btnSecret->setVisible(false);
+    connect(m_btnSecret, &QPushButton::clicked, this, &DirDatabasePanel::onToggleHiddenClicked);
     row2->addWidget(m_btnSecret);
     lv->addLayout(row2);
 
@@ -378,71 +323,54 @@ void DirDatabasePanel::buildUi()
 void DirDatabasePanel::emitFromName(const QString& name)
 {
     if (name.isEmpty()) return;
-    const QJsonArray entries = m_db.value("entries").toArray();
-    for (const auto& v : entries) {
+    for (const auto& v : m_db.value("entries").toArray()) {
         const QJsonObject e = v.toObject();
         if (e.value("name").toString() != name) continue;
-
         const QString absPath =
-            QDir::cleanPath(m_base + '/' + e.value("path").toString());
+            QDir::cleanPath(m_base+'/'+e.value("path").toString());
         if (!QDir(absPath).exists()) {
-            QMessageBox::warning(this, "Path not found",
-                QString("Could not resolve:\n%1").arg(absPath));
-            return;
+            QMessageBox::warning(this,"Path not found",
+                QString("Could not resolve:\n%1").arg(absPath)); return;
         }
-
-        m_activeEntryName   = name;
-        m_pendingLoadPath   = absPath;
-
+        m_activeEntryName = name; m_pendingLoadPath = absPath;
         const QString imgF = e.value("image_files").toString();
         const QString allF = e.value("all_files").toString();
-
         if (!imgF.isEmpty() && !allF.isEmpty()) {
             pbStart(m_pb);
             auto* worker = new CatalogueLoadWorker(m_kaivoDir, imgF, allF);
-            auto* thread = new QThread;
-            m_catThread  = thread;
+            auto* thread = new QThread; m_catThread = thread;
             worker->moveToThread(thread);
-            connect(thread, &QThread::started,  worker, &CatalogueLoadWorker::run);
-            connect(worker, &CatalogueLoadWorker::resultReady,
-                    this,   &DirDatabasePanel::onCatalogueLoaded);
-            connect(worker, &CatalogueLoadWorker::resultReady,
-                    thread, &QThread::quit);
-            connect(worker, &CatalogueLoadWorker::resultReady,
-                    worker, &QObject::deleteLater);
-            connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+            connect(thread,&QThread::started, worker,&CatalogueLoadWorker::run);
+            connect(worker,&CatalogueLoadWorker::resultReady,
+                    this,  &DirDatabasePanel::onCatalogueLoaded);
+            connect(worker,&CatalogueLoadWorker::resultReady,thread,&QThread::quit);
+            connect(worker,&CatalogueLoadWorker::resultReady,worker,&QObject::deleteLater);
+            connect(thread,&QThread::finished, thread,&QObject::deleteLater);
             thread->start();
         } else {
-            // No catalogue yet; pass empty lists, caller rescans
-            QString sourceDir =
-                QDir::cleanPath(m_base + '/' + e.value("path").toString());
-            emit dirLoaded(absPath, {}, {});
-            emit activeEntryChanged(name, sourceDir);
+            const QString src = QDir::cleanPath(m_base+'/'+e.value("path").toString());
+            emit dirLoaded(absPath,{},{});
+            emit activeEntryChanged(name, src);
         }
         m_lblStatus->setText(QString("Loading: %1 …").arg(absPath));
         return;
     }
 }
 
-void DirDatabasePanel::writeCataloguesAndJson(const QString&     entryName,
-                                               const QStringList& imageFiles,
-                                               const QStringList& allFiles)
+void DirDatabasePanel::writeCataloguesAndJson(const QString& entryName,
+                                               const QStringList& img,
+                                               const QStringList& all)
 {
-    pbStart(m_pb);
-    m_btnSave->setEnabled(false);
+    pbStart(m_pb); m_btnSave->setEnabled(false);
     auto* worker = new CatalogueWriteWorker(
-        m_kaivoDir, m_dbPath, m_db, entryName, imageFiles, allFiles);
-    auto* thread = new QThread;
-    m_thread = thread;
+        m_kaivoDir, m_dbPath, m_db, entryName, img, all);
+    auto* thread = new QThread; m_thread = thread;
     worker->moveToThread(thread);
-    connect(thread, &QThread::started,  worker, &CatalogueWriteWorker::run);
-    connect(worker, &CatalogueWriteWorker::resultReady,
-            this,   &DirDatabasePanel::onSaveDone);
-    connect(worker, &CatalogueWriteWorker::resultReady,
-            thread, &QThread::quit);
-    connect(worker, &CatalogueWriteWorker::resultReady,
-            worker, &QObject::deleteLater);
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    connect(thread,&QThread::started, worker,&CatalogueWriteWorker::run);
+    connect(worker,&CatalogueWriteWorker::resultReady,this,&DirDatabasePanel::onSaveDone);
+    connect(worker,&CatalogueWriteWorker::resultReady,thread,&QThread::quit);
+    connect(worker,&CatalogueWriteWorker::resultReady,worker,&QObject::deleteLater);
+    connect(thread,&QThread::finished, thread,&QObject::deleteLater);
     thread->start();
 }
 
@@ -450,15 +378,13 @@ void DirDatabasePanel::saveJsonOnly()
 {
     pbStart(m_pb);
     auto* worker = new DBSaveWorker(m_dbPath, m_db);
-    auto* thread = new QThread;
-    m_thread = thread;
+    auto* thread = new QThread; m_thread = thread;
     worker->moveToThread(thread);
-    connect(thread, &QThread::started, worker, &DBSaveWorker::run);
-    connect(worker, &DBSaveWorker::resultReady,
-            this,   &DirDatabasePanel::onSaveDone);
-    connect(worker, &DBSaveWorker::resultReady, thread, &QThread::quit);
-    connect(worker, &DBSaveWorker::resultReady, worker, &QObject::deleteLater);
-    connect(thread, &QThread::finished,         thread, &QObject::deleteLater);
+    connect(thread,&QThread::started, worker,&DBSaveWorker::run);
+    connect(worker,&DBSaveWorker::resultReady,this,&DirDatabasePanel::onSaveDone);
+    connect(worker,&DBSaveWorker::resultReady,thread,&QThread::quit);
+    connect(worker,&DBSaveWorker::resultReady,worker,&QObject::deleteLater);
+    connect(thread,&QThread::finished, thread,&QObject::deleteLater);
     thread->start();
 }
 
@@ -466,30 +392,27 @@ void DirDatabasePanel::loadDb()
 {
     pbStart(m_pb);
     auto* worker = new DBLoadWorker(m_dbPath);
-    auto* thread = new QThread;
-    m_thread = thread;
+    auto* thread = new QThread; m_thread = thread;
     worker->moveToThread(thread);
-    connect(thread, &QThread::started, worker, &DBLoadWorker::run);
-    connect(worker, &DBLoadWorker::resultReady,
-            this,   &DirDatabasePanel::onIndexLoadDone);
-    connect(worker, &DBLoadWorker::resultReady, thread, &QThread::quit);
-    connect(worker, &DBLoadWorker::resultReady, worker, &QObject::deleteLater);
-    connect(thread, &QThread::finished,         thread, &QObject::deleteLater);
+    connect(thread,&QThread::started, worker,&DBLoadWorker::run);
+    connect(worker,&DBLoadWorker::resultReady,this,&DirDatabasePanel::onIndexLoadDone);
+    connect(worker,&DBLoadWorker::resultReady,thread,&QThread::quit);
+    connect(worker,&DBLoadWorker::resultReady,worker,&QObject::deleteLater);
+    connect(thread,&QThread::finished, thread,&QObject::deleteLater);
     thread->start();
 }
 
 void DirDatabasePanel::refreshList()
 {
     const QString cur = m_listWidget->currentItem()
-                      ? m_listWidget->currentItem()->text() : QString();
+        ? m_listWidget->currentItem()->text() : QString();
     m_listWidget->clear();
     for (const auto& v : m_db.value("entries").toArray()) {
         const QJsonObject e = v.toObject();
         if (!isEntryVisible(e)) continue;
         const bool hidden = e.value("hidden").toBool(false);
-        auto* item = new QListWidgetItem(
-            hidden ? QString("◌ %1").arg(e.value("name").toString())
-                   : e.value("name").toString());
+        const QString name = e.value("name").toString();
+        auto* item = new QListWidgetItem(hidden ? QString("◌ %1").arg(name) : name);
         if (hidden) item->setForeground(Qt::gray);
         m_listWidget->addItem(item);
     }
@@ -503,11 +426,11 @@ void DirDatabasePanel::updateEntryInfo(const QString& name)
         const QJsonObject e = v.toObject();
         if (e.value("name").toString() == name) {
             m_lblEntryInfo->setText(
-                QString("🖼 %1\n📄 %2\n⏱ %3%4")
+                QString("\U0001f5bc %1\n\U0001f4c4 %2\n\u23f1 %3%4")
                     .arg(e.value("image_files").toString("—"))
                     .arg(e.value("all_files").toString("—"))
                     .arg(e.value("scanned_at").toString("—"))
-                    .arg(e.value("hidden").toBool() ? "\n👁 hidden" : ""));
+                    .arg(e.value("hidden").toBool() ? "\n\U0001f441 hidden" : ""));
             return;
         }
     }
@@ -516,8 +439,6 @@ void DirDatabasePanel::updateEntryInfo(const QString& name)
 
 bool DirDatabasePanel::isEntryVisible(const QJsonObject& entry) const
 {
-    // Hidden entries only visible in secret mode
-    if (entry.value("hidden").toBool(false) && !m_secretMode)
-        return false;
+    if (entry.value("hidden").toBool(false) && !m_secretMode) return false;
     return true;
 }

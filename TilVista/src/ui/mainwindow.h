@@ -5,19 +5,14 @@
 class DirBar;
 class AleaVueTab;
 class DirDatabasePanel;
+class MadolodosTab;
+class ShortcutsTab;
 class ShujukoPanel;
 class SattumaPicTab;
 class QLabel;
 class QShortcut;
 class QTabWidget;
 
-/// MainWindow – root widget.
-///
-/// v0.5.31:
-///   – Secret mode via QShortcut (Ctrl+Alt+F8), ApplicationShortcut context
-///     → fires regardless of which widget has keyboard focus.
-///   – Lock indicator: small 🔒/🔓 label in the status bar bottom-right.
-///   – Window title shows TV_APPVERSION_DISPLAY (e.g. "v0.05.31").
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -32,7 +27,7 @@ private slots:
                           const QStringList& allFiles);
     void onActiveEntryChanged(const QString& entryName,
                                const QString& sourceDir);
-    void toggleSecretMode();   ///< triggered by Ctrl+Alt+F8 shortcut
+    void toggleSecretMode();
 
 private:
     void updateSecretIndicator();
@@ -42,8 +37,10 @@ private:
     ShujukoPanel*  m_shujuko       = nullptr;
     AleaVueTab*    m_aleaVueTab    = nullptr;
     SattumaPicTab* m_sattumaPicTab = nullptr;
+    ShortcutsTab*  m_shortcutsTab  = nullptr;
+    MadolodosTab*  m_madolodosTab  = nullptr;
 
-    QLabel*    m_secretIndicator = nullptr;   ///< lock icon in status bar
+    QLabel*    m_secretIndicator = nullptr;
     QShortcut* m_secretShortcut  = nullptr;
     bool       m_secretMode      = false;
 };

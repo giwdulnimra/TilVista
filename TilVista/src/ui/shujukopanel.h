@@ -8,19 +8,9 @@ class QLabel;
 class QListWidget;
 class QProgressBar;
 class QPushButton;
+class QScrollArea;
 class QThread;
 
-/// Shujuko (DB2) – stores files bookmarked with S during AleaVue.
-///
-/// Always linked to one kaivo entry. Disabled until setActiveKaivoEntry().
-/// JSON: optegnelser/kaivo/<safe_name>_shujuko.json
-///
-/// v0.5.31:
-///   – Delete selected entry from shujuko list (visible only in secret mode).
-///   – setSecretMode(bool) shows/hides the delete button.
-///
-/// Signals:
-///   fileSelected(path) – user chose a file via Random/Select/DoubleClick
 class ShujukoPanel : public QWidget
 {
     Q_OBJECT
@@ -32,7 +22,6 @@ public:
     void addBookmark(const QString& filePath);
     void validateFiles();
     void setSecretMode(bool on);
-
     QString currentJsonPath() const;
 
 signals:
@@ -41,7 +30,7 @@ signals:
 private slots:
     void onPickRandom();
     void onPickSelected();
-    void onDeleteEntry();     ///< v0.5.31: delete selected file from shujuko
+    void onDeleteEntry();
     void onSaveDone(bool ok);
     void onLoadDone(bool ok, QJsonObject data);
 
@@ -51,19 +40,21 @@ private:
     void saveToDisk();
     void refreshFileList();
     void setControlsEnabled(bool on);
+    void safeStopThread();          ///< wait-free cleanup before starting new thread
 
     QString     m_entryName;
     QString     m_sourceDir;
     QString     m_jsonPath;
     QJsonObject m_data;
 
-    QLabel*       m_lblHeader  = nullptr;
-    QLabel*       m_lblStatus  = nullptr;
-    QListWidget*  m_fileList   = nullptr;
-    QProgressBar* m_pb         = nullptr;
-    QPushButton*  m_btnRandom  = nullptr;
-    QPushButton*  m_btnSelect  = nullptr;
-    QPushButton*  m_btnDelete  = nullptr;   ///< v0.5.31, secret mode only
+    QLabel*       m_lblHeader = nullptr;
+    QLabel*       m_lblStatus = nullptr;
+    QListWidget*  m_fileList  = nullptr;
+    QProgressBar* m_pb        = nullptr;
+    QPushButton*  m_btnRandom = nullptr;
+    QPushButton*  m_btnSelect = nullptr;
+    QPushButton*  m_btnDelete = nullptr;
 
     QThread* m_thread = nullptr;
+    bool     m_saving = false;   ///< guard: don't stack multiple saves
 };
