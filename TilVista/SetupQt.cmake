@@ -1,16 +1,11 @@
-if(NOT QT_DIR)
-    if(DEFINED ENV{QTDIR})
-        set(QT_DIR "$ENV{QTDIR}")
-        message(STATUS "[SetupQt] Qt from environment: ${QT_DIR}")
-    else()
-        set(QT_DIR "C:/Qt/6.11.0/mingw_64")
-        message(STATUS "[SetupQt] Qt fallback: ${QT_DIR}")
-    endif()
-else()
-    message(STATUS "[SetupQt] Qt from -DQT_DIR: ${QT_DIR}")
-endif()
+# --- SetupQt.cmake ---
+#-> include("SetupQt.cmake")
+#   setup_qt_target(MyTarget)
 
-set(CMAKE_PREFIX_PATH "${QT_DIR}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/build/debug_app)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/build/${PROJECT_NAME}_${APPVERSION})
+
+set(CMAKE_PREFIX_PATH "C:/Qt/6.11.0/mingw_64")
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(Qt6 QUIET COMPONENTS Multimedia MultimediaWidgets)
