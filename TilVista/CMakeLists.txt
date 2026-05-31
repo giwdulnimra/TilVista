@@ -3,8 +3,9 @@ cmake_minimum_required(VERSION 3.20)
 # ── Version ───────────────────────────────────────────────────────────────────
 set(TV_VERSION_MAJOR  0)
 set(TV_VERSION_MINOR  5)
-set(TV_VERSION_PATCH 32)
+set(TV_VERSION_PATCH 33)
 
+# Zero-pad minor and patch to 2 digits (CMake 3.20-compatible, no string FORMAT)
 if(TV_VERSION_MINOR LESS 10)
     set(TV_MINOR_PAD "0${TV_VERSION_MINOR}")
 else()
@@ -16,8 +17,11 @@ else()
     set(TV_PATCH_PAD "${TV_VERSION_PATCH}")
 endif()
 
+# v0_0533 – used in filenames / internal ID
 set(APPVERSION         "v${TV_VERSION_MAJOR}_${TV_MINOR_PAD}${TV_PATCH_PAD}")
+# v0.05.33 – shown in window title and about page
 set(APPVERSION_DISPLAY "v${TV_VERSION_MAJOR}.${TV_MINOR_PAD}.${TV_PATCH_PAD}")
+# 0.5.33   – Qt app metadata (semver)
 set(TV_SEMVER          "${TV_VERSION_MAJOR}.${TV_VERSION_MINOR}.${TV_VERSION_PATCH}")
 
 project(TilVista VERSION "${TV_SEMVER}" LANGUAGES CXX)
@@ -54,11 +58,14 @@ set(TV_SOURCES
 add_executable(TilVista ${TV_SOURCES})
 target_include_directories(TilVista PRIVATE src)
 
+# Expose version strings to C++ code
 target_compile_definitions(TilVista PRIVATE
     TV_APPVERSION="${APPVERSION}"
     TV_APPVERSION_DISPLAY="${APPVERSION_DISPLAY}"
     TV_SEMVER="${TV_SEMVER}"
 )
 
+# Qt modules + AUTOMOC/AUTORCC/AUTOUIC + windeployqt + icon RC + WIN32_EXECUTABLE
 setup_qt_target(TilVista)
+
 install(TARGETS TilVista DESTINATION bin)

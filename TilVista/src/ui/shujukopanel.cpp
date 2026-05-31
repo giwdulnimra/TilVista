@@ -3,6 +3,7 @@
 #include "workers/dbworkers.h"
 
 #include <QAbstractItemView>
+#include <QApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
@@ -17,7 +18,6 @@
 #include <QThread>
 #include <QVBoxLayout>
 #include <random>
-#include <QApplication>
 
 static void pbStart(QProgressBar* p){p->setRange(0,0);p->setVisible(true);}
 static void pbDone (QProgressBar* p){p->setRange(0,100);p->setValue(100);p->setVisible(false);}
@@ -274,8 +274,7 @@ void ShujukoPanel::refreshFileList()
         auto* item = new QListWidgetItem(miss ? QString("⚠ %1").arg(name) : name);
         item->setData(Qt::UserRole, path);
         item->setToolTip(path);
-        if (miss) item->setForeground(QApplication::palette().color(
-            QPalette::Disabled, QPalette::Text));
+        if (miss) item->setForeground(Qt::gray);
         m_fileList->addItem(item);
     }
     // Restore selection
