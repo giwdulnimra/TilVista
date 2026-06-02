@@ -1,6 +1,15 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
-  <qresource prefix="/">
-    <!-- Add icons here when available -->
+  <qresource prefix="/icons">
+    <!--
+      tilvista.ico – application icon
+      Place the file at:  TilVista/resources/tilvista.ico
+      The .ico format allows multiple sizes (16x16, 32x32, 48x48, 256x256)
+      all in one file, which is what Windows / windeployqt expects.
+
+      If the file is absent at build time CMake will warn but the build
+      still succeeds; the icon simply falls back to the Qt default.
+    -->
+    <file>tilvista.ico</file>
   </qresource>
 </RCC>

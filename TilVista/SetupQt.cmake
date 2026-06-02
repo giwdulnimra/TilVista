@@ -1,3 +1,7 @@
+# --- SetupQt.cmake ---
+#-> include("SetupQt.cmake")
+#   setup_qt_target(MyTarget)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/build/debug_app)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/build/${PROJECT_NAME}_${APPVERSION})
 
