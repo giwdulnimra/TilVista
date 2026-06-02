@@ -37,8 +37,8 @@ private:
     ShujukoPanel*  m_shujuko       = nullptr;
     AleaVueTab*    m_aleaVueTab    = nullptr;
     SattumaPicTab* m_sattumaPicTab = nullptr;
-    ShortcutsTab*  m_shortcutsTab  = nullptr;
     MadolodosTab*  m_madolodosTab  = nullptr;
+    ShortcutsTab*  m_shortcutsTab  = nullptr;
 
     QLabel*    m_secretIndicator = nullptr;
     QShortcut* m_secretShortcut  = nullptr;

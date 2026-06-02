@@ -19,6 +19,15 @@
 static void pbStart(QProgressBar* p){ p->setRange(0,100); p->setValue(0); p->setVisible(true); }
 static void pbDone (QProgressBar* p){ p->setRange(0,100); p->setValue(100); p->setVisible(false); }
 
+/// Disconnect a running scan thread from this receiver so stale signals
+/// can't fire into the UI after a new scan has been started.
+static void safeStop(QThread*& t, QObject* receiver)
+{
+    if (!t) return;
+    t->disconnect(receiver);
+    t = nullptr;
+}
+
 AleaVueTab::AleaVueTab(std::function<QString()> getGlobalDir,
                         ShujukoPanel*            shujuko,
                         QWidget*                 parent)
@@ -130,6 +139,7 @@ void AleaVueTab::onStartSlideshow()
     if (!m_imagePaths.isEmpty()) { openWindow(dir, m_imagePaths); return; }
 
     pbStart(m_pb); m_btnStart->setEnabled(false);
+    safeStop(m_scanThread, this);
     auto* worker = new ScanWorker(dir);
     auto* thread = new QThread; m_scanThread = thread;
     worker->moveToThread(thread);
@@ -149,6 +159,7 @@ void AleaVueTab::scanDir(const QString& path)
     pbStart(m_pb); m_btnStart->setEnabled(false);
     m_lblStatus->setText(QString("Scanning: %1 …").arg(path));
     m_lastScannedPath = path;
+    safeStop(m_scanThread, this);
     auto* worker = new ScanWorker(path);
     auto* thread = new QThread; m_scanThread = thread;
     worker->moveToThread(thread);

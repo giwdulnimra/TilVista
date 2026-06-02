@@ -17,10 +17,10 @@
 #include <QWidget>
 
 #ifndef TV_APPVERSION_DISPLAY
-#  define TV_APPVERSION_DISPLAY "v0.05.33"
+#  define TV_APPVERSION_DISPLAY "v0.05.41"
 #endif
 #ifndef TV_SEMVER
-#  define TV_SEMVER "0.5.33"
+#  define TV_SEMVER "0.5.41"
 #endif
 
 static const char* kSecretKeySeq = "Ctrl+Alt+F8";
@@ -30,14 +30,10 @@ MainWindow::MainWindow(QWidget* parent)
 {
     setWindowTitle(
         QString("TilVista  \u2013  %1").arg(TV_APPVERSION_DISPLAY));
-    setMinimumSize(880, 620);
+    setMinimumSize(900, 640);
 
-    // ── App icon (tilvista.ico via Qt resource) ───────────────────────────────
-    // The icon is embedded in resources.qrc as :/icons/tilvista.ico
-    // Falls back gracefully if the file is missing (no crash).
     const QIcon appIcon(":/icons/tilvista.ico");
-    if (!appIcon.isNull())
-        setWindowIcon(appIcon);
+    if (!appIcon.isNull()) setWindowIcon(appIcon);
 
     auto* central = new QWidget;
     setCentralWidget(central);
@@ -45,8 +41,7 @@ MainWindow::MainWindow(QWidget* parent)
     mv->setContentsMargins(8,8,8,8); mv->setSpacing(4);
 
     m_dirBar = new DirBar;
-    connect(m_dirBar, &DirBar::directoryChanged,
-            this, &MainWindow::onDirChanged);
+    connect(m_dirBar, &DirBar::directoryChanged, this, &MainWindow::onDirChanged);
     mv->addWidget(m_dirBar);
 
     m_shujuko = new ShujukoPanel(this);
@@ -57,8 +52,9 @@ MainWindow::MainWindow(QWidget* parent)
         [this]{ return m_dirBar->directory(); }, m_shujuko);
     m_sattumaPicTab = new SattumaPicTab(
         [this]{ return m_dirBar->directory(); }, m_shujuko);
-    m_madolodosTab  = new MadolodosTab;
-    m_shortcutsTab  = new ShortcutsTab;   // renamed to "About"
+    m_madolodosTab  = new MadolodosTab(
+        [this]{ return m_dirBar->directory(); });
+    m_shortcutsTab  = new ShortcutsTab;
 
     connect(m_dirBar, &DirBar::loadRequested,
             m_aleaVueTab, &AleaVueTab::loadFromDirectory);
@@ -73,11 +69,11 @@ MainWindow::MainWindow(QWidget* parent)
     connect(db1, &DirDatabasePanel::requestShujukoValidation,
             m_shujuko, &ShujukoPanel::validateFiles);
 
-    // ── Tab order: AleaVue | SattumaPic | Madoludus | About ──────────────────
+    // Tab order: AleaVue | SattumaPic | Madoludus | About
     m_tabs->addTab(m_aleaVueTab,    "\U0001f5bc  AleaVue");
     m_tabs->addTab(m_sattumaPicTab, "\U0001f3b2  SattumaPic");
     m_tabs->addTab(m_madolodosTab,  "\U0001f39e  Madoludus");
-    m_tabs->addTab(m_shortcutsTab,  "About");   // no symbol, as requested
+    m_tabs->addTab(m_shortcutsTab,  "About");
     mv->addWidget(m_tabs);
 
     // ── Status bar lock indicator ─────────────────────────────────────────────
@@ -99,14 +95,21 @@ void MainWindow::onDirChanged(const QString& path)
 {
     m_aleaVueTab->onDirectoryChanged(path);
     m_sattumaPicTab->onDirectoryChanged(path);
+    // Madoludus gets the dir; allFiles will be populated after scan
+    m_madolodosTab->onDirectoryChanged(path);
 }
+
 void MainWindow::onDirFromDb(const QString& path)
 { m_dirBar->setDirectory(path); }
 
 void MainWindow::onDb1FilesLoaded(const QString& path,
                                    const QStringList&,
                                    const QStringList& allFiles)
-{ m_sattumaPicTab->onDirectoryChanged(path, allFiles); }
+{
+    m_sattumaPicTab->onDirectoryChanged(path, allFiles);
+    // Pass allFiles to Madoludus too – avoids a second scan
+    m_madolodosTab->onDirectoryChanged(path, allFiles);
+}
 
 void MainWindow::onActiveEntryChanged(const QString& entryName,
                                        const QString& sourceDir)
@@ -117,6 +120,7 @@ void MainWindow::toggleSecretMode()
     m_secretMode = !m_secretMode;
     m_aleaVueTab->dbPanel()->setSecretMode(m_secretMode);
     m_shujuko->setSecretMode(m_secretMode);
+    m_madolodosTab->setSecretMode(m_secretMode);
     updateSecretIndicator();
 }
 

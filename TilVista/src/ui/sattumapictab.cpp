@@ -22,6 +22,7 @@
 
 static void pbStart(QProgressBar* p){ p->setRange(0,100); p->setValue(0); p->setVisible(true); }
 static void pbDone (QProgressBar* p){ p->setRange(0,100); p->setValue(100); p->setVisible(false); }
+static void safeStop(QThread*& t, QObject* r){ if(!t) return; t->disconnect(r); t=nullptr; }
 
 SattumaPicTab::SattumaPicTab(std::function<QString()> getGlobalDir,
                               ShujukoPanel*            shujuko,
@@ -149,6 +150,7 @@ void SattumaPicTab::onPreviewFromShujuko(const QString& path)
 void SattumaPicTab::scanAndPick(const QString& path)
 {
     pbStart(m_pb);
+    safeStop(m_scanThread, this);
     auto* worker = new ScanWorker(path);
     auto* thread = new QThread; m_scanThread = thread;
     worker->moveToThread(thread);

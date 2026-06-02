@@ -10,9 +10,17 @@ class QListWidget;
 class QListWidgetItem;
 class QProgressBar;
 class QPushButton;
-class QRegularExpression;
 class QThread;
 
+/// kaivo Directory Database Panel (DB1).
+///
+/// Threading rules (v0.5.41):
+///   – m_thread   : catalogue write / JSON-only save / index load
+///   – m_catThread: catalogue read (on "Load from DB")
+///   – m_updThread: directory rescan ("Update Entry")
+///   Each slot that starts a thread first calls safeStop(thread) to
+///   disconnect and disown any still-running thread before launching a new one.
+///   This prevents signal delivery to stale `this` pointers.
 class DirDatabasePanel : public QWidget
 {
     Q_OBJECT
@@ -43,6 +51,7 @@ private slots:
     void onToggleHiddenClicked();
     void onItemDoubleClicked(QListWidgetItem*);
     void onCurrentNameChanged(const QString& name);
+
     void onSaveDone(bool ok);
     void onIndexLoadDone(bool ok, QJsonObject data);
     void onCatalogueLoaded(bool ok, QStringList imageFiles, QStringList allFiles);
@@ -60,6 +69,13 @@ private:
     void updateEntryInfo(const QString& name);
     bool isEntryVisible(const QJsonObject& entry) const;
 
+    /// Disconnect all signals from *thread* to this object, then clear the
+    /// pointer. The thread and worker clean themselves up via deleteLater.
+    void safeStop(QThread*& threadRef);
+
+    /// Strip the "◌ " decoration prefix added by refreshList().
+    static QString rawName(const QString& displayName);
+
     std::function<QString()> m_getCurrentDir;
     QString     m_base, m_kaivoDir, m_dbPath;
     QJsonObject m_db;
@@ -71,7 +87,7 @@ private:
 
     QString m_pendingLoadPath;
     QString m_activeEntryName;
-    QString m_updatingEntryName;   ///< stored at scan-start, used in callback
+    QString m_updatingEntryName;
 
     QLineEdit*    m_lineName     = nullptr;
     QListWidget*  m_listWidget   = nullptr;
@@ -84,7 +100,7 @@ private:
     QPushButton*  m_btnUpdate    = nullptr;
     QPushButton*  m_btnSecret    = nullptr;
 
-    QThread* m_thread    = nullptr;
-    QThread* m_catThread = nullptr;
-    QThread* m_updThread = nullptr;
+    QThread* m_thread    = nullptr;   // save / load index
+    QThread* m_catThread = nullptr;   // catalogue load
+    QThread* m_updThread = nullptr;   // rescan
 };
