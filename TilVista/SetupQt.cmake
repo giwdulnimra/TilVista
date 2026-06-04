@@ -25,7 +25,8 @@ function(setup_qt_target target_name)
         target_link_libraries(${target_name} PRIVATE Qt6::Multimedia Qt6::MultimediaWidgets)
     endif()
     if(WIN32)
-        find_program(WINDEPLOYQT_EXECUTABLE windeployqt6 HINTS "${QT_DIR}/bin")
+        #find_program(WINDEPLOYQT_EXECUTABLE windeployqt6 HINTS "${QT_DIR}/bin")
+        find_program(WINDEPLOYQT_EXECUTABLE windeployqt6 HINTS "${CMAKE_PREFIX_PATH}/bin")
         if(WINDEPLOYQT_EXECUTABLE)
             add_custom_command(TARGET ${target_name} POST_BUILD
                 COMMAND "${WINDEPLOYQT_EXECUTABLE}"
