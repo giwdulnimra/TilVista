@@ -14,13 +14,22 @@ class QThread;
 
 /// kaivo Directory Database Panel (DB1).
 ///
-/// Threading rules (v0.5.41):
+/// Threading rules (v0.5.42):
 ///   – m_thread   : catalogue write / JSON-only save / index load
 ///   – m_catThread: catalogue read (on "Load from DB")
 ///   – m_updThread: directory rescan ("Update Entry")
 ///   Each slot that starts a thread first calls safeStop(thread) to
 ///   disconnect and disown any still-running thread before launching a new one.
 ///   This prevents signal delivery to stale `this` pointers.
+///
+///   While a catalogue load (m_catThread) is running, setBusy(true) disables
+///   Save/Load/Delete/Update and the entry list, so a second click can't
+///   start a competing operation on the same QJsonObject (m_db) while it is
+///   being read. emitFromName() also ignores re-entrant calls outright.
+///
+///   flushPendingWrites() is called from MainWindow::closeEvent() so an
+///   in-flight "Save to DB" write still completes before the app actually
+///   exits, instead of being silently abandoned mid-write.
 class DirDatabasePanel : public QWidget
 {
     Q_OBJECT
@@ -33,6 +42,11 @@ public:
                      const QStringList& allFiles);
     void setSecretMode(bool on);
     bool secretMode() const { return m_secretMode; }
+
+    /// v0.5.42: block briefly (pumping the event loop) until any in-flight
+    /// save/catalogue-write thread has actually finished writing to disk.
+    /// Safe to call from MainWindow::closeEvent().
+    void flushPendingWrites();
 
 signals:
     void dirLoaded(const QString& absPath,
@@ -68,6 +82,10 @@ private:
     void loadDb();
     void updateEntryInfo(const QString& name);
     bool isEntryVisible(const QJsonObject& entry) const;
+
+    /// v0.5.42: enable/disable everything that touches m_db while a
+    /// catalogue load is running in the background.
+    void setBusy(bool busy);
 
     /// Disconnect all signals from *thread* to this object, then clear the
     /// pointer. The thread and worker clean themselves up via deleteLater.

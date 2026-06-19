@@ -43,11 +43,13 @@ static const QList<Section> kSections = {
         "Madoludus  –  In-Window Slideshow",
         {
             {"Space",                     "Play / Pause"},
-            {"\u2192  /  \u2190",         "Next / Previous file"},
-            {"Shift+\u2192 / Shift+\u2190","Video: seek +5 s / \u22125 s"},
+            {"\u2192  /  \u2190",         "Next / Previous file (history-aware,\n"
+                                          "works in random order too)"},
+            {"Shift+\u2192 / Shift+\u2190","Video (direct playback only): seek +5 s / \u22125 s"},
             {"M",                          "Mute / Unmute video"},
             {"F",                          "Toggle FF / Impression mode\n"
                                            "Disabling FF requires Secret Mode"},
+            {"R",                          "Toggle random / sequential file order  (v0.5.42)"},
         }
     },
     {

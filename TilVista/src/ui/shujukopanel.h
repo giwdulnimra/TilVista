@@ -24,6 +24,12 @@ public:
     void setSecretMode(bool on);
     QString currentJsonPath() const;
 
+    /// v0.5.42: same quit-safety net as DirDatabasePanel::flushPendingWrites()
+    /// – blocks briefly (pumping the event loop) until an in-flight bookmark
+    /// save has actually finished, so a bookmark added right before quitting
+    /// isn't lost.
+    void flushPendingWrites();
+
 signals:
     void fileSelected(const QString& path);
 

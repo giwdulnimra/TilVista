@@ -19,20 +19,36 @@ SlideshowWindow::SlideshowWindow(const QString&     directory,
                                   const QStringList& imagePaths,
                                   const QString&     logPath,
                                   bool               logErrors,
+                                  bool               fullscreen,
                                   ShujukoPanel*      shujuko,
                                   QWidget*           parent)
     : QMainWindow(parent)
     , m_directory(directory), m_imagePaths(imagePaths)
     , m_logPath(logPath), m_logErrors(logErrors)
+    , m_fullscreen(fullscreen)
     , m_shujuko(shujuko)
 {
     setWindowTitle("TilVista · AleaVue");
     setStyleSheet("background-color: black;");
-    setCursor(Qt::BlankCursor);
     TV::preventSleep();
 
     const QRect scr = QGuiApplication::primaryScreen()->availableGeometry();
-    m_showW = scr.width(); m_showH = scr.height();
+    if (m_fullscreen) {
+        // Fullscreen: no window chrome to operate, so the cursor can be
+        // hidden entirely – this is the only case it should disappear in.
+        setCursor(Qt::BlankCursor);
+        m_showW = scr.width();
+        m_showH = scr.height();
+    } else {
+        // Windowed: keep the normal arrow cursor (title bar / resize
+        // handles need it) and anchor the window top-left at half the
+        // available screen size, so it is guaranteed to be fully visible
+        // on first show instead of relying on the window manager's
+        // default placement/size.
+        m_showW = scr.width()  / 2;
+        m_showH = scr.height() / 2;
+        setGeometry(0, 0, m_showW, m_showH);
+    }
     m_ratio = double(m_showW) / double(m_showH);
 
     m_label = new QLabel;

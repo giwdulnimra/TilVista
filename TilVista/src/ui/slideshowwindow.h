@@ -10,6 +10,15 @@ class ShujukoPanel;
 ///
 /// S key emits bookmarkAdded(path) which ShujukoPanel::addBookmark() handles.
 /// Enter key is reserved (no action).
+///
+/// v0.5.42: the window now knows whether it was opened in fullscreen or
+/// windowed mode (see ctor parameter `fullscreen`):
+///   – Fullscreen: mouse cursor is hidden completely (Qt::BlankCursor),
+///     since there is no window chrome to interact with.
+///   – Windowed:   normal cursor stays visible (title bar / resize handles
+///     need it), and the window starts anchored at (0,0) with half the
+///     available screen width/height so it can never open partially
+///     off-screen.
 class SlideshowWindow : public QMainWindow
 {
     Q_OBJECT
@@ -18,6 +27,7 @@ public:
                     const QStringList& imagePaths,
                     const QString&     logPath,
                     bool               logErrors,
+                    bool               fullscreen,
                     ShujukoPanel*      shujuko,
                     QWidget*           parent = nullptr);
 
@@ -40,6 +50,7 @@ private:
     QStringList m_imagePaths;
     QString     m_logPath;
     bool        m_logErrors;
+    bool        m_fullscreen = false;   ///< v0.5.42
     ShujukoPanel* m_shujuko;
 
     QLabel* m_label = nullptr;

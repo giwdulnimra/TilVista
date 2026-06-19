@@ -16,6 +16,7 @@ public:
     void setPaused(bool paused);
     void setMuted(bool muted);
     void setFFMode(bool ff);
+    void setRandomMode(bool on);   ///< v0.5.42 – shuffle/random-order indicator
     void setFileInfo(int index, int total, const QString& name);
     void setSecretMode(bool on);   ///< show/hide FF button
 
@@ -25,6 +26,7 @@ signals:
     void nextClicked();
     void muteClicked();
     void ffClicked();
+    void shuffleClicked();         ///< v0.5.42
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -35,5 +37,6 @@ private:
     QPushButton* m_btnNext    = nullptr;
     QPushButton* m_btnMute    = nullptr;
     QPushButton* m_btnFF      = nullptr;
+    QPushButton* m_btnShuffle = nullptr;   ///< v0.5.42
     QLabel*      m_lblInfo    = nullptr;
 };

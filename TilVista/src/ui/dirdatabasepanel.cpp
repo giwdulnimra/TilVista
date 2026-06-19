@@ -5,8 +5,10 @@
 #include "workers/scanworker.h"
 
 #include <QAbstractItemView>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QHBoxLayout>
 #include <QJsonArray>
@@ -74,6 +76,37 @@ QString DirDatabasePanel::rawName(const QString& displayName)
     // Strip the "◌ " prefix added for hidden entries in refreshList()
     static const QRegularExpression prefix("^◌ ");
     return QString(displayName).remove(prefix);
+}
+
+// ── setBusy (v0.5.42) ─────────────────────────────────────────────────────────
+void DirDatabasePanel::setBusy(bool busy)
+{
+    // Disable everything that touches m_db while a background catalogue
+    // load is in flight – prevents a second Save/Load/Delete/Update from
+    // racing the load on the same QJsonObject.
+    m_btnSave->setEnabled(!busy);
+    m_btnLoad->setEnabled(!busy);
+    m_btnDelete->setEnabled(!busy);
+    m_btnUpdate->setEnabled(!busy);
+    if (m_secretMode) m_btnSecret->setEnabled(!busy);
+    m_listWidget->setEnabled(!busy);
+}
+
+// ── flushPendingWrites (v0.5.42) ────────────────────────────────────────────
+void DirDatabasePanel::flushPendingWrites()
+{
+    // A plain QThread::wait() here would deadlock: the worker thread emits
+    // resultReady() as a queued connection back onto this (the main) thread,
+    // and quit()/deleteLater() are only processed once the main thread's
+    // event loop runs again. Since we'd be blocking that very thread inside
+    // wait(), the signal would never be delivered and quit() never called.
+    // Pumping processEvents() here keeps just enough of the event loop alive
+    // to let the in-flight save finish and clean up, with a hard timeout so
+    // we never hang the app on exit if something goes wrong.
+    if (!m_thread) return;
+    QElapsedTimer t; t.start();
+    while (m_thread && t.elapsed() < 3000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 }
 
 // ── Public ────────────────────────────────────────────────────────────────────
@@ -276,6 +309,7 @@ void DirDatabasePanel::onCatalogueLoaded(bool ok,
                                           QStringList allFiles)
 {
     pbDone(m_pb);
+    setBusy(false);   // v0.5.42: re-enable Save/Load/Delete/Update + list
     m_catThread = nullptr;
     m_lblStatus->setText(ok
         ? QString("✓  %1 images loaded.").arg(imageFiles.size())
@@ -369,8 +403,10 @@ void DirDatabasePanel::buildUi()
 
 void DirDatabasePanel::emitFromName(const QString& name)
 {
-    if (name.isEmpty()) return;
-    safeStop(m_catThread);   // cancel any previous catalogue load
+    // v0.5.42: ignore re-entrant calls while a catalogue load is already
+    // running instead of cancelling it – the UI is disabled via setBusy()
+    // for the same reason, this is just defense in depth.
+    if (name.isEmpty() || m_catThread) return;
 
     for (const auto& v : m_db.value("entries").toArray()) {
         const QJsonObject e = v.toObject();
@@ -388,6 +424,7 @@ void DirDatabasePanel::emitFromName(const QString& name)
         const QString allF = e.value("all_files").toString();
         if (!imgF.isEmpty() && !allF.isEmpty()) {
             pbStart(m_pb);
+            setBusy(true);   // v0.5.42: block Save/Load/Delete/Update + list
             auto* worker = new CatalogueLoadWorker(m_kaivoDir, imgF, allF);
             m_catThread  = new QThread;
             worker->moveToThread(m_catThread);

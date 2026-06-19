@@ -46,6 +46,10 @@ MadoOverlay::MadoOverlay(QWidget* parent)
         m_btnFF->styleSheet() +
         "QPushButton { font-size: 12px; font-weight: bold; color: #e8a000; }");
 
+    // v0.5.42: shuffle / random-order toggle (Madoludus "Random selection")
+    m_btnShuffle = makeBtn("\U0001f500", this);   // 🔀
+    m_btnShuffle->setToolTip("Random order OFF (R) – sequential order");
+
     m_lblInfo = new QLabel(this);
     m_lblInfo->setStyleSheet("color: rgba(255,255,255,200); font-size: 11px;");
     m_lblInfo->setAlignment(Qt::AlignCenter);
@@ -56,14 +60,16 @@ MadoOverlay::MadoOverlay(QWidget* parent)
     layout->addSpacing(8);
     layout->addWidget(m_btnMute);
     layout->addWidget(m_btnFF);
+    layout->addWidget(m_btnShuffle);
     layout->addStretch();
     layout->addWidget(m_lblInfo);
 
-    connect(m_btnPlay, &QPushButton::clicked, this, &MadoOverlay::playPauseClicked);
-    connect(m_btnPrev, &QPushButton::clicked, this, &MadoOverlay::prevClicked);
-    connect(m_btnNext, &QPushButton::clicked, this, &MadoOverlay::nextClicked);
-    connect(m_btnMute, &QPushButton::clicked, this, &MadoOverlay::muteClicked);
-    connect(m_btnFF,   &QPushButton::clicked, this, &MadoOverlay::ffClicked);
+    connect(m_btnPlay,    &QPushButton::clicked, this, &MadoOverlay::playPauseClicked);
+    connect(m_btnPrev,    &QPushButton::clicked, this, &MadoOverlay::prevClicked);
+    connect(m_btnNext,    &QPushButton::clicked, this, &MadoOverlay::nextClicked);
+    connect(m_btnMute,    &QPushButton::clicked, this, &MadoOverlay::muteClicked);
+    connect(m_btnFF,      &QPushButton::clicked, this, &MadoOverlay::ffClicked);
+    connect(m_btnShuffle, &QPushButton::clicked, this, &MadoOverlay::shuffleClicked);
 }
 
 void MadoOverlay::setPaused(bool paused)
@@ -87,6 +93,20 @@ void MadoOverlay::setFFMode(bool ff)
         "  background: transparent; border: none; border-radius: 6px;"
         "}"
         "QPushButton:hover { background: rgba(255,255,255,40); }");
+}
+
+void MadoOverlay::setRandomMode(bool on)
+{
+    m_btnShuffle->setStyleSheet(
+        "QPushButton {"
+        "  font-size: 16px;"
+        "  color: " + QString(on ? "#4fc3f7" : "rgba(255,255,255,120)") + ";"
+        "  background: transparent; border: none; border-radius: 6px;"
+        "}"
+        "QPushButton:hover { background: rgba(255,255,255,40); }");
+    m_btnShuffle->setToolTip(on
+        ? "Random order ON (R) – Next picks a random file"
+        : "Random order OFF (R) – sequential order");
 }
 
 void MadoOverlay::setFileInfo(int index, int total, const QString& name)

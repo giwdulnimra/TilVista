@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QJsonArray>
@@ -97,6 +98,18 @@ void ShujukoPanel::setSecretMode(bool on)
 }
 
 QString ShujukoPanel::currentJsonPath() const { return m_jsonPath; }
+
+// ── flushPendingWrites (v0.5.42) ────────────────────────────────────────────
+void ShujukoPanel::flushPendingWrites()
+{
+    // See DirDatabasePanel::flushPendingWrites() for why processEvents()
+    // is used here instead of QThread::wait() (would deadlock on the
+    // queued resultReady connection back to this object).
+    if (!m_thread) return;
+    QElapsedTimer t; t.start();
+    while (m_thread && t.elapsed() < 3000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+}
 
 // ── Slots ─────────────────────────────────────────────────────────────────────
 

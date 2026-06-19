@@ -174,9 +174,12 @@ void AleaVueTab::scanDir(const QString& path)
 
 void AleaVueTab::openWindow(const QString& directory, const QStringList& imagePaths)
 {
+    // v0.5.42: pass the fullscreen flag into SlideshowWindow itself, so it
+    // can decide cursor visibility and initial geometry accordingly
+    // (see slideshowwindow.h/.cpp).
+    const bool fullscreen = m_chkFullscreen->isChecked();
     m_slideshowWindow = new SlideshowWindow(
-        directory, imagePaths, TV::logDir(), false, m_shujuko);
-    m_chkFullscreen->isChecked()
-        ? m_slideshowWindow->showFullScreen()
-        : m_slideshowWindow->show();
+        directory, imagePaths, TV::logDir(), false, fullscreen, m_shujuko);
+    fullscreen ? m_slideshowWindow->showFullScreen()
+               : m_slideshowWindow->show();
 }
