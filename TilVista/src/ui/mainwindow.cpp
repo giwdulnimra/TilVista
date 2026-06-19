@@ -73,7 +73,7 @@ MainWindow::MainWindow(QWidget* parent)
     // Tab order: AleaVue | SattumaPic | Madoludus | About
     m_tabs->addTab(m_aleaVueTab,    "\U0001f5bc  AleaVue");
     m_tabs->addTab(m_sattumaPicTab, "\U0001f3b2  SattumaPic");
-    m_tabs->addTab(m_madoludusTab,  "\U0001f39e  Madoludus");
+    m_tabs->addTab(m_madoludusTab,  "\U0001f39e  MadoLudus");
     m_tabs->addTab(m_shortcutsTab,  "About");
     mv->addWidget(m_tabs);
 
