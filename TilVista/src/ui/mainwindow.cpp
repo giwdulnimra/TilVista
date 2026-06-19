@@ -2,11 +2,12 @@
 #include "aleavuetab.h"
 #include "dirdatabasepanel.h"
 #include "dirbar.h"
-#include "madolodostab.h"
+#include "madoludustab.h"
 #include "shortcutstab.h"
 #include "shujukopanel.h"
 #include "sattumapictab.h"
 
+#include <QCloseEvent>
 #include <QIcon>
 #include <QLabel>
 #include <QKeySequence>
@@ -17,10 +18,10 @@
 #include <QWidget>
 
 #ifndef TV_APPVERSION_DISPLAY
-#  define TV_APPVERSION_DISPLAY "v0.05.41"
+#  define TV_APPVERSION_DISPLAY "v0.05.42"
 #endif
 #ifndef TV_SEMVER
-#  define TV_SEMVER "0.5.41"
+#  define TV_SEMVER "0.5.42"
 #endif
 
 static const char* kSecretKeySeq = "Ctrl+Alt+F8";
@@ -52,7 +53,7 @@ MainWindow::MainWindow(QWidget* parent)
         [this]{ return m_dirBar->directory(); }, m_shujuko);
     m_sattumaPicTab = new SattumaPicTab(
         [this]{ return m_dirBar->directory(); }, m_shujuko);
-    m_madolodosTab  = new MadolodosTab(
+    m_madoludusTab  = new MadoludusTab(
         [this]{ return m_dirBar->directory(); });
     m_shortcutsTab  = new ShortcutsTab;
 
@@ -72,7 +73,7 @@ MainWindow::MainWindow(QWidget* parent)
     // Tab order: AleaVue | SattumaPic | Madoludus | About
     m_tabs->addTab(m_aleaVueTab,    "\U0001f5bc  AleaVue");
     m_tabs->addTab(m_sattumaPicTab, "\U0001f3b2  SattumaPic");
-    m_tabs->addTab(m_madolodosTab,  "\U0001f39e  Madoludus");
+    m_tabs->addTab(m_madoludusTab,  "\U0001f39e  Madoludus");
     m_tabs->addTab(m_shortcutsTab,  "About");
     mv->addWidget(m_tabs);
 
@@ -91,12 +92,22 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::toggleSecretMode);
 }
 
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    // v0.5.42: make sure a kaivo "Save to DB" or a shujuko bookmark write
+    // that started just before quitting actually finishes, instead of
+    // being silently abandoned mid-write when the process exits.
+    m_aleaVueTab->dbPanel()->flushPendingWrites();
+    m_shujuko->flushPendingWrites();
+    QMainWindow::closeEvent(event);
+}
+
 void MainWindow::onDirChanged(const QString& path)
 {
     m_aleaVueTab->onDirectoryChanged(path);
     m_sattumaPicTab->onDirectoryChanged(path);
     // Madoludus gets the dir; allFiles will be populated after scan
-    m_madolodosTab->onDirectoryChanged(path);
+    m_madoludusTab->onDirectoryChanged(path);
 }
 
 void MainWindow::onDirFromDb(const QString& path)
@@ -108,7 +119,7 @@ void MainWindow::onDb1FilesLoaded(const QString& path,
 {
     m_sattumaPicTab->onDirectoryChanged(path, allFiles);
     // Pass allFiles to Madoludus too – avoids a second scan
-    m_madolodosTab->onDirectoryChanged(path, allFiles);
+    m_madoludusTab->onDirectoryChanged(path, allFiles);
 }
 
 void MainWindow::onActiveEntryChanged(const QString& entryName,
@@ -120,7 +131,7 @@ void MainWindow::toggleSecretMode()
     m_secretMode = !m_secretMode;
     m_aleaVueTab->dbPanel()->setSecretMode(m_secretMode);
     m_shujuko->setSecretMode(m_secretMode);
-    m_madolodosTab->setSecretMode(m_secretMode);
+    m_madoludusTab->setSecretMode(m_secretMode);
     updateSecretIndicator();
 }
 

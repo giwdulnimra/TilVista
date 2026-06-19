@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(TilVista VERSION 0.5.41 LANGUAGES CXX)
+project(TilVista VERSION 0.5.42 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -42,7 +42,8 @@ set(TV_SOURCES
         src/ui/sattumapictab.h        src/ui/sattumapictab.cpp
         src/ui/slideshowwindow.h      src/ui/slideshowwindow.cpp
         src/ui/madooverlay.h          src/ui/madooverlay.cpp
-        src/ui/madolodostab.h         src/ui/madolodostab.cpp
+        src/ui/madoludustab.h         src/ui/madoludustab.cpp
+        src/ui/madoluduswindow.h      src/ui/madoluduswindow.cpp
         src/ui/shortcutstab.h         src/ui/shortcutstab.cpp
         src/ui/mainwindow.h           src/ui/mainwindow.cpp
         resources/resources.qrc
