@@ -1,0 +1,240 @@
+% ============================================================
+%  macros.tex  --  Farben, Listings-Stile, tcolorbox-Umgebungen
+%                  und Hilfsmakros fuer die TilVista-Dokumentation
+%
+%  Wird per \input{src/packages/macros} in tilvista_doku.tex
+%  eingebunden, nach packages.tex und vor \begin{document}.
+% ============================================================
+
+% ============================================================
+%  FARBEN
+% ============================================================
+
+% Hauptfarbe fuer C++-Schluesselwoerter und Links
+\definecolor{cppblue}  {HTML}{003E7E}
+
+% Qt-typisches Gruen (Signale, Qt-spezifische Klassen)
+\definecolor{qtgreen}  {HTML}{2E7D32}
+
+% Hintergrund fuer Code-Bloecke (sehr helles Grau-Blau)
+\definecolor{codebg}   {HTML}{F4F6F9}
+
+% Rahmenfarbe fuer Code-Bloecke
+\definecolor{framerule}{HTML}{B0BEC5}
+
+% Hinweis-Box (gelb)
+\definecolor{calloutbg}{HTML}{FFF8E1}
+\definecolor{calloutfr}{HTML}{F9A825}
+
+% Warnungs-Box (rot)
+\definecolor{warnbg}   {HTML}{FFEBEE}
+\definecolor{warnfr}   {HTML}{C62828}
+
+% Info-Box / Qt-Hintergrund (blau)
+\definecolor{infobg}   {HTML}{E3F2FD}
+\definecolor{infofr}   {HTML}{1565C0}
+
+% Neue-Funktion-Box (gruen)
+\definecolor{newbg}    {HTML}{E8F5E9}
+\definecolor{newfr}    {HTML}{2E7D32}
+
+% Link-Farbe (dunkles Marineblau)
+\definecolor{linkblue} {HTML}{1A237E}
+
+% CMake-Schluesselwoerter (Dunkelrot)
+\definecolor{cmakered} {HTML}{8B1A1A}
+
+% ============================================================
+%  LISTINGS-STILE
+% ============================================================
+
+% -- Basis-Stil fuer C++ -------------------------------------
+\lstdefinestyle{cpp}{
+  language        = C++,
+  basicstyle      = \ttfamily\small,
+  % Schluesselwoerter fett + blau
+  keywordstyle    = \bfseries\color{cppblue},
+  % Kommentare kursiv + hellgrau
+  commentstyle    = \itshape\color{gray!65},
+  % Strings dunkelrot
+  stringstyle     = \color{BrickRed},
+  % Zeilennummern (klein, grau, links)
+  numberstyle     = \tiny\color{gray!60},
+  numbers         = left,
+  numbersep       = 9pt,
+  % Hintergrund und Rahmen
+  backgroundcolor = \color{codebg},
+  frame           = single,
+  framerule       = 0.5pt,
+  rulecolor       = \color{framerule},
+  % Zeilenumbruch bei langen Zeilen
+  breaklines      = true,
+  breakatwhitespace = true,
+  tabsize         = 4,
+  showstringspaces = false,
+  % WICHTIG: extendedchars=false verhindert, dass listings
+  % versucht, UTF-8-Bytes selbst zu interpretieren.
+  % Umlaute in lstlisting-Bloecken muessen als ASCII-Umschreibung
+  % stehen (ae, oe, ue, ss). Im normalen Fliestext ausserhalb
+  % von lstlisting funktionieren Umlaute dank inputenc normal.
+  extendedchars   = false,
+  % Zusaetzliche Qt- und C++-Schluesselwoerter
+  morekeywords    = {signals,slots,emit,Q_OBJECT,override,
+                     nullptr,auto,constexpr,explicit,
+                     QString,QWidget,QTimer,QPixmap,QLabel,
+                     QMainWindow,QObject,QThread,Qt,
+                     bool,int,double,float,void},
+  xleftmargin     = 2em,
+  xrightmargin    = 0.5em,
+  aboveskip       = 6pt,
+  belowskip       = 6pt
+}
+
+% -- Stil fuer Header-Dateien (.h) ---------------------------
+% Identisch mit cpp, aber mit leicht blaulichem Hintergrund,
+% um Header optisch von .cpp-Dateien zu unterscheiden.
+\lstdefinestyle{header}{
+  style           = cpp,
+  backgroundcolor = \color{blue!5}
+}
+
+% -- Stil fuer CMake-Dateien ---------------------------------
+\lstdefinestyle{cmake}{
+  language        = {},       % kein eingebautes CMake-Highlighting
+  basicstyle      = \ttfamily\small,
+  keywordstyle    = \bfseries\color{cmakered},
+  commentstyle    = \itshape\color{gray!65},
+  stringstyle     = \color{BrickRed},
+  numberstyle     = \tiny\color{gray!60},
+  numbers         = left,
+  numbersep       = 9pt,
+  backgroundcolor = \color{codebg},
+  frame           = single,
+  framerule       = 0.5pt,
+  rulecolor       = \color{framerule},
+  breaklines      = true,
+  tabsize         = 2,
+  showstringspaces = false,
+  extendedchars   = false,
+  morekeywords    = {cmake_minimum_required,project,set,
+                     find_package,add_executable,
+                     target_link_libraries,target_compile_definitions,
+                     target_include_directories,
+                     set_target_properties,
+                     add_custom_command,add_compile_definitions,
+                     function,endfunction,if,else,endif,
+                     find_program,message,include,install},
+  xleftmargin     = 2em,
+  xrightmargin    = 0.5em,
+  aboveskip       = 6pt,
+  belowskip       = 6pt
+}
+
+% Standard-Stil fuer alle \begin{lstlisting} ohne style=...
+\lstset{style=cpp}
+
+% ============================================================
+%  tcolorbox-UMGEBUNGEN (farbige Infokaesten)
+% ============================================================
+
+% -- Hinweis (gelb) ------------------------------------------
+% Fuer allgemeine Tipps und Erklaerungen
+\newtcolorbox{hinweis}[1][]{
+  enhanced, breakable,
+  colback    = calloutbg,
+  colframe   = calloutfr,
+  fonttitle  = \bfseries\small,
+  title      = {Hinweis},
+  left=6pt, right=6pt, top=4pt, bottom=4pt,
+  #1
+}
+
+% -- Warnung (rot) -------------------------------------------
+% Fuer Fallstricke, undefiniertes Verhalten, Deadlock-Gefahren
+\newtcolorbox{warnung}[1][]{
+  enhanced, breakable,
+  colback    = warnbg,
+  colframe   = warnfr,
+  fonttitle  = \bfseries\small,
+  title      = {Achtung},
+  left=6pt, right=6pt, top=4pt, bottom=4pt,
+  #1
+}
+
+% -- Qt-Hintergrund (blau) -----------------------------------
+% Fuer Qt-spezifische Konzepterklarungen mit Doku-Links
+\newtcolorbox{qtinfo}[1][]{
+  enhanced, breakable,
+  colback    = infobg,
+  colframe   = infofr,
+  fonttitle  = \bfseries\small,
+  title      = {Qt-Hintergrund},
+  left=6pt, right=6pt, top=4pt, bottom=4pt,
+  #1
+}
+
+% -- Neu in v0.5.42 (gruen) ----------------------------------
+% Hebt Aenderungen der aktuellen Version hervor
+\newtcolorbox{neuin}[1][]{
+  enhanced, breakable,
+  colback    = newbg,
+  colframe   = newfr,
+  fonttitle  = \bfseries\small,
+  title      = {Neu in v0.5.42},
+  left=6pt, right=6pt, top=4pt, bottom=4pt,
+  #1
+}
+
+% ============================================================
+%  HILFSMAKROS (Semantische Auszeichnung)
+% ============================================================
+
+% Dateinamen: monospace, z.B. \datei{mainwindow.h}
+\newcommand{\datei}[1]{\texttt{#1}}
+
+% Klassennamen: monospace + fett, z.B. \klasse{MainWindow}
+\newcommand{\klasse}[1]{\texttt{\textbf{#1}}}
+
+% Methoden mit Klammern: \methode{buildUi} --> buildUi()
+\newcommand{\methode}[1]{\texttt{#1()}}
+
+% Member-Variablen: \member{m\_dirBar}
+\newcommand{\member}[1]{\texttt{#1}}
+
+% Signale (Qt-gruen): \signal{dirLoaded}
+\newcommand{\signal}[1]{\texttt{\color{qtgreen}#1}}
+
+% Slots (blau): \slot{onDirChanged}
+\newcommand{\slot}[1]{\texttt{\color{cppblue}#1}}
+
+% Praeprozessor-Makros (dunkelrot): \makro{TV\_NO\_MULTIMEDIA}
+\newcommand{\makro}[1]{\texttt{\color{BrickRed}#1}}
+
+% CMake-Befehle: \cmake{find\_package}
+\newcommand{\cmake}[1]{\texttt{\color{cmakered}#1}}
+
+% Namespace-Praefix: \ns{TV} --> TV::
+\newcommand{\ns}[1]{\texttt{#1::}}
+
+% Versionsnummer hervorgehoben: \version{0.5.42}
+\newcommand{\version}[1]{\textbf{v#1}}
+
+% ============================================================
+%  SEITENSTIL (fancyhdr)
+% ============================================================
+
+\pagestyle{fancy}
+\fancyhf{}  % alle Felder leeren
+
+% Linke Seite (gerade Seitenzahl): Icon + Kapitelname
+\fancyhead[LE]{%
+  \raisebox{-2pt}{\includegraphics[height=11pt]{graphics/icon}}%
+  \quad\small\leftmark%
+}
+% Rechte Seite (ungerade Seitenzahl): Abschnittsname
+\fancyhead[RO]{\small\rightmark}
+% Fusszeile zentriert: Seitenzahl
+\fancyfoot[C]{\small\thepage}
+
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}

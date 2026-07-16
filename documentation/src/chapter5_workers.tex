@@ -1,0 +1,538 @@
+% ============================================================
+%  Kapitel 5: Worker-Klassen und gemeinsame Infrastruktur
+% ============================================================
+\chapter{Worker-Klassen und gemeinsame Infrastruktur}
+
+% ============================================================
+\section{Funktionsweise}
+% ============================================================
+
+TilVista fuehrt alle datei-intensiven Operationen in
+Hintergrund-Threads aus, damit der GUI-Thread jederzeit
+reaktiv bleibt. Alle Worker folgen demselben Muster:
+
+\begin{enumerate}[noitemsep]
+  \item \klasse{QObject}-Subklasse mit einem \verb|run()|-Slot
+  \item \verb|moveToThread()| in einen \klasse{QThread}
+  \item Arbeit in \methode{run}, Ergebnis per Signal
+  \item Selbstaufraeuumung via \verb|deleteLater()|
+\end{enumerate}
+
+Die Worker-Klassen im Ueberblick:
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Klasse} & \textbf{Aufgabe} & \textbf{Genutzt von} \\
+\midrule
+\klasse{ScanWorker}       & Verzeichnis rekursiv scannen  &
+  AleaVueTab, MadoludusTab \\
+\klasse{DBSaveWorker}     & JSON-Datei schreiben          &
+  DirDatabasePanel, ShujukoPanel \\
+\klasse{DBLoadWorker}     & JSON-Datei lesen              &
+  DirDatabasePanel, ShujukoPanel \\
+\klasse{CatalogueWriteWorker} & .dshow/.catalogue schreiben &
+  DirDatabasePanel \\
+\klasse{CatalogueLoadWorker}  & .dshow/.catalogue lesen     &
+  DirDatabasePanel \\
+\klasse{VideoFramesWorker}    & ffmpeg-Frames extrahieren   &
+  VideoPreviewWidget, MadoludusWindow \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ============================================================
+\section{File by File}
+% ============================================================
+
+\subsection{scanworker.h / scanworker.cpp}
+
+\begin{lstlisting}[style=header, caption={scanworker.h}]
+class ScanWorker : public QObject {
+    Q_OBJECT
+public:
+    explicit ScanWorker(const QString& directory,
+                        QObject* parent = nullptr);
+public slots:
+    void run();
+signals:
+    void progressChanged(int percent);
+    void resultReady(bool ok,
+                     QStringList imageFiles,
+                     QStringList allFiles);
+private:
+    QString m_directory;
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: run() -- rekursiver Verzeichnis-Scan}
+
+\begin{lstlisting}[caption={ScanWorker::run -- QDirIterator mit Subdirectories}]
+void ScanWorker::run() {
+    QStringList all, img;
+    try {
+        // Rekursive Iteration ohne Limit
+        QDirIterator it(
+            m_directory,
+            QDir::Files | QDir::NoDotAndDotDot,
+            QDirIterator::Subdirectories);
+
+        while (it.hasNext()) {
+            it.next();
+            all << it.filePath();
+        }
+        const int total = all.isEmpty() ? 1 : all.size();
+        const auto& suf = TV::imageSuffixes();
+
+        for (int i = 0; i < all.size(); ++i) {
+            const QString ext =
+                '.' + QFileInfo(all[i]).suffix().toLower();
+            if (suf.contains(ext))
+                img << all[i];
+            // Fortschritt in den GUI-Thread senden
+            emit progressChanged((i+1)*100/total);
+        }
+        emit resultReady(true, img, all);
+    } catch (...) {
+        // Jede Exception abfangen: im Worker-Thread gibt
+        // es keinen Aufrufer, der Exceptions behandeln koennte
+        emit resultReady(false, {}, {});
+    }
+}
+\end{lstlisting}
+
+\begin{qtinfo}[title={Qt-Hintergrund: QDirIterator}]
+\klasse{QDirIterator} traversiert einen Verzeichnisbaum
+iterativ ohne Rekursion -- kein Stack-Overflow-Risiko auch
+bei tief verschachtelten Strukturen.
+Die Option \verb|Subdirectories| aktiviert die rekursive
+Traversal. \verb|NoDotAndDotDot| schliesst \datei{.} und
+\datei{..} aus.\\
+Referenz: \url{https://doc.qt.io/qt-6/qdiriterator.html}
+\end{qtinfo}
+
+\paragraph{try/catch(...) im Worker-Thread}
+Der \verb|catch(...)| (drei Punkte = jede Exception)
+ist hier bewusst breit: Im Worker-Thread gibt es keinen
+uebergeordneten Aufrufer auf dem Call-Stack, der eine
+Exception sinnvoll behandeln koennte. Unbehandelte
+Exceptions in einem Thread beenden das Programm unkontrolliert
+(\verb|std::terminate|). Daher: abfangen, \verb|false|
+melden, sauber beenden.
+
+% ----------------------------------------------------------
+\subsection{dbworkers.h / dbworkers.cpp}
+% ----------------------------------------------------------
+
+\begin{lstlisting}[style=header, caption={dbworkers.h}]
+class DBSaveWorker : public QObject {
+    Q_OBJECT
+public:
+    DBSaveWorker(const QString& path,
+                 const QJsonObject& data,
+                 QObject* p = nullptr);
+public slots: void run();
+signals: void resultReady(bool ok);
+private:
+    QString     m_path;
+    QJsonObject m_data;  // Wert-Kopie (thread-sicher)
+};
+
+class DBLoadWorker : public QObject {
+    Q_OBJECT
+public:
+    explicit DBLoadWorker(const QString& path,
+                          QObject* p = nullptr);
+public slots: void run();
+signals: void resultReady(bool ok, QJsonObject data);
+private:
+    QString m_path;
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: QJsonObject als Wert-Kopie}
+
+\begin{lstlisting}[caption={DBSaveWorker::run}]
+void DBSaveWorker::run() {
+    QDir().mkpath(QFileInfo(m_path).absolutePath());
+    QFile f(m_path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        emit resultReady(false);
+        return;
+    }
+    // QJsonDocument::Indented: lesbare Formatierung
+    f.write(QJsonDocument(m_data)
+            .toJson(QJsonDocument::Indented));
+    emit resultReady(true);
+}
+\end{lstlisting}
+
+\member{m\_data} ist eine \emph{Wert-Kopie} von
+\verb|QJsonObject|. Qt-Wertobjekte nutzen
+\emph{Copy-on-Write (Implicit Sharing)}: Der Kopiervorgang
+im Konstruktor ist sehr guenstig (nur Referenzzaehler
+erhoehen). Erst wenn jemand schreibt, wird wirklich kopiert.
+Ergebnis: Beide Threads (GUI und Worker) haben
+unabhaengige Daten ohne Mutex.
+
+\verb|QDir().mkpath(...)| erzeugt das Zielverzeichnis
+rekursiv, falls es noch nicht existiert --
+das Aequivalent zu \texttt{mkdir -p}.
+
+% ----------------------------------------------------------
+\subsection{catalogueworkers.h / catalogueworkers.cpp}
+% ----------------------------------------------------------
+
+\begin{lstlisting}[style=header, caption={catalogueworkers.h}]
+class CatalogueWriteWorker : public QObject {
+    Q_OBJECT
+public:
+    CatalogueWriteWorker(
+        const QString& kaivoDir,
+        const QString& dbPath,
+        const QJsonObject& dbData,
+        const QString& entryName,
+        const QStringList& imageFiles,
+        const QStringList& allFiles,
+        QObject* p = nullptr);
+public slots: void run();
+signals: void resultReady(bool ok);
+};
+
+class CatalogueLoadWorker : public QObject {
+    Q_OBJECT
+public:
+    CatalogueLoadWorker(
+        const QString& kaivoDir,
+        const QString& imgFname,
+        const QString& allFname,
+        QObject* p = nullptr);
+public slots: void run();
+signals:
+    void resultReady(bool ok,
+                     QStringList imageFiles,
+                     QStringList allFiles);
+private:
+    QString m_kaivoDir, m_imgFname, m_allFname;
+    // static: kein this-Pointer noetig
+    static QStringList readLines(const QString& path);
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: static readLines}
+
+\verb|readLines| ist eine statische Hilfsmethode:
+Sie braucht keinen Zustand des Objekts, nur einen Pfad.
+\verb|static| im Klassenkontext bedeutet: kein impliziter
+\verb|this|-Zeiger, kein Zugriff auf Instanz-Member.
+Man haette auch eine freie Funktion nehmen koennen --
+als statische Methode ist sie jedoch logisch der Klasse
+zugeordnet.
+
+\begin{lstlisting}[caption={CatalogueLoadWorker::readLines}]
+QStringList CatalogueLoadWorker::readLines(
+    const QString& path)
+{
+    QStringList r;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return r;
+    QTextStream in(&f);
+    while (!in.atEnd()) {
+        const QString l = in.readLine().trimmed();
+        if (!l.isEmpty()) r << l;
+    }
+    return r;
+}
+\end{lstlisting}
+
+\verb|QTextStream| liest zeilenweise und behandelt
+Encoding-Fragen. \verb|trimmed()| entfernt fuehrende
+und abschliessende Leerzeichen (inkl. \verb|\r| unter
+Windows) -- wichtig fuer Cross-Platform-Kompatibilitaet
+der Katalog-Dateien.
+
+% ----------------------------------------------------------
+\subsection{videoframesworker.h / videoframesworker.cpp}
+% ----------------------------------------------------------
+
+\klasse{VideoFramesWorker} extrahiert Einzelbilder aus
+Videos via ffmpeg und legt sie als JPEG im Temp-Verzeichnis
+ab.
+
+\begin{lstlisting}[style=header, caption={videoframesworker.h -- Kern}]
+class VideoFramesWorker : public QObject {
+    Q_OBJECT
+public:
+    enum class Mode { IntervalSeconds, FixedCount };
+
+    explicit VideoFramesWorker(
+        const QString& videoPath,
+        Mode    mode  = Mode::IntervalSeconds,
+        double  value = 10.0,
+        QObject* parent = nullptr);
+
+    const QString& tmpDir() const { return m_tmpDir; }
+
+public slots: void run();
+
+signals:
+    void resultReady(bool ok, QStringList framePaths);
+
+private:
+    // Videodauer via "ffmpeg -i" aus stderr lesen
+    static double probeDurationSeconds(const QString& path);
+    QList<double> computeTimestamps(double durationSeconds) const;
+
+    QString m_videoPath, m_tmpDir;
+    Mode    m_mode;
+    double  m_value;
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: Scoped Enum (enum class)}
+
+\begin{lstlisting}
+enum class Mode { IntervalSeconds, FixedCount };
+\end{lstlisting}
+
+\verb|enum class| (C++11) ist ein stark typisiertes Enum:
+\begin{itemize}[noitemsep]
+  \item Werte sind \emph{nicht} in den umgebenden Scope
+    exportiert: Man schreibt
+    \verb|Mode::IntervalSeconds|, nicht einfach
+    \verb|IntervalSeconds|
+  \item Kein implizites Konvertieren zu \verb|int|:
+    Fehler werden vom Compiler erkannt statt still
+    falsch zu laufen
+  \item Besser lesbar als \verb|bool ffFixedCount|
+    mit zwei Bedeutungen
+\end{itemize}
+
+\subsubsection{C++-Analyse: probeDurationSeconds}
+
+\begin{lstlisting}[caption={probeDurationSeconds: ffmpeg-Stderr parsen}]
+double VideoFramesWorker::probeDurationSeconds(
+    const QString& path)
+{
+    // "ffmpeg -i <path>" gibt Metadaten auf stderr aus
+    // und beendet sich mit Fehlercode (kein Output-File).
+    // Genau das brauchen wir -- nur die Metadaten.
+    QProcess proc;
+    proc.start("ffmpeg", {"-i", path});
+    proc.waitForFinished(8000);
+    const QString out =
+        QString::fromUtf8(proc.readAllStandardError());
+
+    // "Duration: HH:MM:SS.xx" im stderr suchen
+    static const QRegularExpression re(
+        R"(Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?))");
+    const auto m = re.match(out);
+    if (!m.hasMatch()) return 0.0;
+
+    return m.captured(1).toDouble() * 3600.0  // Stunden
+         + m.captured(2).toDouble() *   60.0  // Minuten
+         + m.captured(3).toDouble();           // Sekunden
+}
+\end{lstlisting}
+
+\textbf{Warum stderr?} ffmpeg gibt Metadaten immer auf
+\emph{stderr} aus, auch wenn es sich um normale
+Informationen handelt. stdout ist fuer die eigentliche
+Ausgabedatei reserviert.
+
+\textbf{Raw-String-Regex}: \verb|R"(...)"| vermeidet
+doppeltes Escaping. Ohne Raw-String:
+\verb|"Duration:\\s*(\\d+):(\\d+):"| -- schlecht lesbar.
+
+\subsubsection{v0.5.42: computeTimestamps -- durationssensitiv}
+
+\begin{lstlisting}[caption={computeTimestamps: IntervalSeconds und FixedCount}]
+QList<double> VideoFramesWorker::computeTimestamps(
+    double durationSeconds) const
+{
+    constexpr int kMaxFrames = 60;
+    QList<double> ts;
+
+    if (durationSeconds <= 0.5) {
+        ts << 0.0;
+        return ts;
+    }
+
+    if (m_mode == Mode::IntervalSeconds) {
+        // Ein Frame pro "value" Sekunden
+        const double step = qMax(0.2, m_value);
+        for (double t = 0.0; t < durationSeconds; t += step)
+            ts << t;
+        if (ts.isEmpty()) ts << 0.0;
+    } else {
+        // Genau "value" Frames gleichmaessig verteilt
+        const int count = qMax(1, int(m_value));
+        if (count == 1) {
+            ts << durationSeconds / 2.0;
+            return ts;
+        }
+        for (int i = 0; i < count; ++i)
+            ts << durationSeconds * double(i)
+                                  / double(count - 1);
+    }
+
+    // Auf 60 Frames deckeln (verhindert hunderte ffmpeg-Aufrufe)
+    if (ts.size() > kMaxFrames) {
+        QList<double> capped;
+        for (int i = 0; i < kMaxFrames; ++i)
+            capped << ts.at(
+                i * (ts.size()-1) / (kMaxFrames-1));
+        return capped;
+    }
+    return ts;
+}
+\end{lstlisting}
+
+\begin{neuin}[title={Neu in v0.5.42: Dauer-bewusste Timestamps}]
+Fruehre Version: fest \{0, 10, 20, 30, 40, 50\} Sekunden --
+bei kurzen Videos (unter 10 Sekunden) gab es fast keine
+Frames, bei langen Videos immer nur den Anfang.
+
+Neue Version: Die Videodauer wird per \verb|ffmpeg -i|
+ermittelt. Dann werden Timestamps relativ zur Gesamtdauer
+berechnet -- fuer ein 2-Minuten-Video mit "1/sec" gibt
+es 120 Frames (gedeckelt auf 60). Fuer "1/10 frames" gibt
+es immer genau 10 gleichmaessig verteilte Frames.
+\end{neuin}
+
+\subsubsection{Qt-Analyse: QProcess fuer externe Programme}
+
+\begin{lstlisting}[caption={run(): ffmpeg-Frames extrahieren}]
+void VideoFramesWorker::run() {
+    // ffmpeg vorhanden?
+    if (QStandardPaths::findExecutable("ffmpeg").isEmpty()) {
+        emit resultReady(false, {});
+        return;
+    }
+    const double duration = probeDurationSeconds(m_videoPath);
+    const QList<double> times = duration > 0.0
+        ? computeTimestamps(duration)
+        : QList<double>{0.0, 5.0, 10.0, 15.0, 20.0, 25.0};
+
+    QStringList frames;
+    int idx = 0;
+    for (double t : times) {
+        const QString out =
+            QString("%1/f%2.jpg")
+            .arg(m_tmpDir)
+            // 3-stellig, Basis 10, Fuellzeichen '0'
+            .arg(idx++, 3, 10, QChar('0'));
+
+        QProcess proc;
+        proc.start("ffmpeg", {
+            "-i",        m_videoPath,
+            "-ss",       QString::number(t, 'f', 2),
+            "-vframes",  "1",
+            "-f",        "image2",
+            "-y",        out
+        });
+        proc.waitForFinished(12000);
+        if (proc.exitCode() == 0 && QFile::exists(out))
+            frames << out;
+    }
+    emit resultReady(!frames.isEmpty(), frames);
+}
+\end{lstlisting}
+
+\paragraph{QString::arg mit Formatierung}
+\verb|.arg(idx++, 3, 10, QChar('0'))| formatiert
+eine Zahl mit:
+\begin{itemize}[noitemsep]
+  \item Breite 3 (\verb|3|)
+  \item Basis 10 (\verb|10|)
+  \item Fuellzeichen \verb|'0'|
+\end{itemize}
+Ergebnis: 0 $\to$ \verb|f000.jpg|, 10 $\to$ \verb|f010.jpg|.
+Sortierbare Dateinamen ohne Extrabibliothek.
+
+\begin{qtinfo}[title={Qt-Hintergrund: QProcess und Argumente}]
+\klasse{QProcess} startet externe Programme sicher ohne
+Shell-Interaktion. \verb|proc.start(programm, arglist)|
+uebergibt Argumente als \klasse{QStringList} -- Leerzeichen
+in Pfaden werden korrekt behandelt, Shell-Injection ist
+nicht moeglich. Im Gegensatz zu
+\verb|system("ffmpeg -i " + path)| ist das auch auf
+Pfaden mit Leerzeichen und Sonderzeichen zuverlaessig.\\
+Referenz: \url{https://doc.qt.io/qt-6/qprocess.html}
+\end{qtinfo}
+
+% ----------------------------------------------------------
+\subsection{Tab 4 -- shortcutstab.h / shortcutstab.cpp}
+% ----------------------------------------------------------
+
+Der About-Tab ist ein reiner Informations-Tab ohne
+Datenbankanbindung.
+
+\subsubsection{Datentabellen als statische Structs}
+
+\begin{lstlisting}[caption={Datenmodell als Compile-Zeit-Konstanten}]
+struct Row     { const char* key; const char* description; };
+struct Section { const char* title; QList<Row> rows; };
+
+static const QList<Section> kSections = {
+    {
+        "Global",
+        {
+            {"Ctrl+Alt+F8", "Toggle Secret Mode"},
+            {"Enter (DirBar)", "Verzeichnis uebernehmen"},
+        }
+    },
+    {
+        "AleaVue  --  Vollbild-Diashow",
+        {
+            {"->",      "Naechstes Bild (zufaellig)"},
+            {"<-",      "Zurueck (Verlauf)"},
+            {"S",       "Bookmark in shujuko"},
+            {"Space",   "Timer pause/resume"},
+            {"Esc",     "Diashow schliessen"},
+        }
+    },
+    // ...
+};
+\end{lstlisting}
+
+\verb|const char*| ist ein C-String-Zeiger direkt auf
+das String-Literal im Programm-Daten-Segment. Da die
+Strings nicht geaendert werden, ist das effizient und
+sicher. \klasse{QList<Row>} kann mit
+Initializer-Listen \verb|{ {...}, {...} }| befuellt werden.
+
+\subsubsection{Dynamische Tabellenhoehe}
+
+\begin{lstlisting}[caption={makeTable: exakte Hoehe berechnen}]
+static QTableWidget* makeTable(const Section& sec) {
+    auto* table = new QTableWidget(
+        static_cast<int>(sec.rows.size()), 2);
+    table->horizontalHeader()
+         ->setStretchLastSection(true);
+    table->verticalHeader()->setVisible(false);
+    table->setEditTriggers(
+        QAbstractItemView::NoEditTriggers);
+    table->setSelectionMode(
+        QAbstractItemView::NoSelection);
+    table->setShowGrid(false);
+    table->setAlternatingRowColors(true);
+
+    // ... Eintraege setzen ...
+    table->resizeRowsToContents();
+
+    // Exakte Hoehe = Headerhoehe + alle Zeilenhoehen
+    int h = table->horizontalHeader()->height();
+    for (int r = 0; r < table->rowCount(); ++r)
+        h += table->rowHeight(r);
+    table->setFixedHeight(h + 4);  // +4 Pixel Puffer
+    return table;
+}
+\end{lstlisting}
+
+\verb|setFixedHeight| klemmt die Hoehe auf exakt den
+Inhalt -- kein Leerraum, keine Scrollbar noetig.
+\verb|setAlternatingRowColors(true)| erzeugt abwechselnde
+Zeilenfaerbung automatisch -- per OS-Theme-Farben,
+kein Hardcoding noetig.

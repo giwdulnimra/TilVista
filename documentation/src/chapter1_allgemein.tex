@@ -1,0 +1,418 @@
+% ============================================================
+%  Kapitel 1: Allgemein -- TilVista und MainWindow
+% ============================================================
+\chapter{Allgemein: TilVista und das MainWindow}
+
+\section{Projektueberblick}
+
+TilVista ist eine Qt6-Desktop-Anwendung zur Verwaltung und
+Anzeige von Mediendateien -- Bildern und Videos.
+Der Name ist ein Kunstwort aus \emph{tilvelde}
+(norw. zufaellig) und \emph{vista} (span./ital. Aussicht).
+Version \version{0.5.42} ist die aktuelle Entwicklungsversion.
+
+Das Programm gliedert sich in drei Haupt-Werkzeuge,
+die als Tabs im Hauptfenster angeordnet sind:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{AleaVue} -- Zufaellige Vollbild-Diashow aus
+    einem Verzeichnis (Bilder, S-Taste zum Bookmarken)
+  \item \textbf{SattumaPic} -- Zufaelliger Dateiaufruf mit
+    Vorschau (beliebige Dateitypen)
+  \item \textbf{MadoLudus} -- Konfigurations-Tab, oeffnet ein
+    eigenstaendiges \klasse{MadoludusWindow} fuer Bilder und
+    Videos mit Flip-Book-Modus (\textbf{neu ab v0.5.42})
+\end{itemize}
+
+Zwei persistente Datenbanken erganzen die Werkzeuge:
+\begin{itemize}[noitemsep]
+  \item \textbf{kaivo (DB1)} -- Verzeichnis-Datenbank mit
+    gecachten Dateilisten (\datei{.dshow} / \datei{.catalogue})
+  \item \textbf{shujuko (DB2)} -- Lesezeichen fuer einzelne
+    Dateien, je kaivo-Eintrag eine eigene JSON-Datei
+\end{itemize}
+
+\section{Architekturueberblick}
+
+Das Programm folgt einer flachen, signalgesteuerten Hierarchie.
+\klasse{MainWindow} besitzt alle Tabs und gemeinsam genutzten
+Komponenten. Tabs kommunizieren \emph{ausschliesslich} ueber
+Signale und Slots mit \klasse{MainWindow} -- niemals direkt
+untereinander.
+
+\begin{center}
+\ttfamily\small
+\begin{tabular}{|c|}
+\hline
+\textbf{MainWindow (QMainWindow)} \\
+\hline
+DirBar -- globale Verzeichnisauswahl (oben) \\
+\hline
+QTabWidget \\
+\quad AleaVueTab \textbar{} SattumaPicTab \textbar{}
+MadoludusTab \textbar{} ShortcutsTab \\
+\hline
+StatusBar + SecretIndicator (unten) \\
+\hline
+\end{tabular}
+\end{center}
+
+\begin{neuin}
+\textbf{v0.5.42-Refactor Madoludus:}
+Der fruehre \klasse{MadolodosTab} war ein
+Monolith (Konfiguration + Wiedergabe in einer Klasse).
+Jetzt trennt \klasse{MadoludusTab} die Konfiguration vom
+Wiedergabe-Fenster (\klasse{MadoludusWindow}), das beim
+Start-Klick als eigenstaendiges \klasse{QMainWindow}
+geoeffnet wird. Das Fenster ist rahmenlos, immer im
+Vordergrund und per Maus verschiebbar.
+
+Neu ebenfalls: \verb|closeEvent| in \klasse{MainWindow}
+ruft \methode{flushPendingWrites} auf beiden Datenbanken auf,
+damit laufende Hintergrund-Saves beim Beenden nicht
+abgebrochen werden.
+\end{neuin}
+
+\klasse{ShujukoPanel} ist eine Besonderheit:
+Es wird in \klasse{MainWindow} erstellt, aber als geteilter
+Rohzeiger (shared, not owned) sowohl an
+\klasse{AleaVueTab} als auch an \klasse{SattumaPicTab}
+weitergereicht. Der Eigentuemer ist \klasse{MainWindow}.
+
+\section{Dateien: mainwindow.h}
+
+\begin{lstlisting}[style=header, caption={mainwindow.h -- vollstaendige Deklaration}]
+#pragma once
+#include <QMainWindow>
+#include <QStringList>
+
+// Forward-Deklarationen: kein #include noetig,
+// solange nur Zeiger deklariert werden.
+class DirBar;
+class AleaVueTab;
+class DirDatabasePanel;
+class MadoludusTab;     // v0.5.42: war MadolodosTab
+class ShortcutsTab;
+class ShujukoPanel;
+class SattumaPicTab;
+class QCloseEvent;      // v0.5.42: neu (fuer closeEvent)
+class QLabel;
+class QShortcut;
+class QTabWidget;
+
+class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+public:
+    explicit MainWindow(QWidget* parent = nullptr);
+
+protected:
+    // v0.5.42: wartet auf laufende Hintergrund-Saves
+    void closeEvent(QCloseEvent* event) override;
+
+private slots:
+    void onDirChanged(const QString& path);
+    void onDirFromDb(const QString& path);
+    void onDb1FilesLoaded(const QString& path,
+                          const QStringList& imageFiles,
+                          const QStringList& allFiles);
+    void onActiveEntryChanged(const QString& entryName,
+                               const QString& sourceDir);
+    void toggleSecretMode();
+
+private:
+    void updateSecretIndicator();
+
+    DirBar*        m_dirBar        = nullptr;
+    QTabWidget*    m_tabs          = nullptr;
+    ShujukoPanel*  m_shujuko       = nullptr;
+    AleaVueTab*    m_aleaVueTab    = nullptr;
+    SattumaPicTab* m_sattumaPicTab = nullptr;
+    MadoludusTab*  m_madoludusTab  = nullptr;
+    ShortcutsTab*  m_shortcutsTab  = nullptr;
+
+    QLabel*    m_secretIndicator = nullptr;
+    QShortcut* m_secretShortcut  = nullptr;
+    bool       m_secretMode      = false;
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse}
+
+\paragraph{\#pragma once}
+Ein nicht-standardisierter, aber universell unterstuetzter
+Include-Guard. Statt
+\verb|#ifndef MAINWINDOW_H / #define / #endif|
+sorgt \verb|#pragma once| dafuer, dass die Datei pro
+Kompiliereinheit nur einmal eingelesen wird -- kuerzer und
+fehlerunanfaelliger.
+
+\paragraph{Forward-Deklarationen}
+Statt \verb|#include "aleavuetab.h"| reicht im Header
+\verb|class AleaVueTab;| -- solange nur Zeiger auf den Typ
+deklariert werden, muss der Compiler die Klasse noch nicht
+vollstaendig kennen. Weniger Abhaengigkeiten, schnellere
+Kompilierung (Pimpl-Idiom light).
+
+\paragraph{Mitglieder-Initialisierung mit = nullptr}
+In C++11 und spaeter kann man Pointer-Member direkt im
+Klassenkoerper initialisieren. Das verhindert
+uninitialisierte Zeiger (undefined behavior) und erspart
+explizite Konstruktorinitialisierer.
+
+\subsubsection{Qt-Analyse}
+
+\paragraph{QMainWindow}
+Die Basisklasse liefert Menueleiste, Toolbar-Bereich,
+CentralWidget und Statusleiste -- vorgefertigt, kein
+manueller Aufbau noetig. \klasse{MainWindow} erbt alles
+durch \verb|: public QMainWindow|.
+
+\paragraph{Q\_OBJECT}
+Pflicht-Makro fuer jede Klasse mit Signalen oder Slots.
+Der Meta Object Compiler (\texttt{moc}) generiert daraus
+den C++-Code, der das Signal-Slot-System implementiert.
+\cmake{AUTOMOC ON} in \datei{SetupQt.cmake} erledigt den
+\texttt{moc}-Aufruf automatisch beim Build.
+
+\paragraph{private slots}
+Slots koennen jede Sichtbarkeit haben. \verb|private slots|
+bedeutet: Die Slots koennen nur intern oder ueber
+\verb|connect()| genutzt werden, nicht von aussen als
+normale Methode aufgerufen.
+
+\section{Dateien: mainwindow.cpp}
+
+\begin{lstlisting}[caption={Konstruktor: Fenster aufbauen}]
+MainWindow::MainWindow(QWidget* parent)
+    : QMainWindow(parent)
+{
+    setWindowTitle(
+        QString("TilVista  \u2013  %1")
+        .arg(TV_APPVERSION_DISPLAY));
+    setMinimumSize(900, 640);
+
+    // Icon aus Qt-Ressourcen (resources.qrc)
+    const QIcon appIcon(":/icons/tilvista.ico");
+    if (!appIcon.isNull()) setWindowIcon(appIcon);
+
+    // Zentrales Widget + vertikales Layout
+    auto* central = new QWidget;
+    setCentralWidget(central);
+    auto* mv = new QVBoxLayout(central);
+    mv->setContentsMargins(8,8,8,8);
+    mv->setSpacing(4);
+
+    m_dirBar = new DirBar;
+    connect(m_dirBar, &DirBar::directoryChanged,
+            this, &MainWindow::onDirChanged);
+    mv->addWidget(m_dirBar);
+
+    // ShujukoPanel: Eigentuemer MainWindow, geteilt mit Tabs
+    m_shujuko = new ShujukoPanel(this);
+
+    m_tabs = new QTabWidget;
+
+    // Lambda gibt den aktuellen Verzeichnis-Zustand weiter
+    m_aleaVueTab = new AleaVueTab(
+        [this]{ return m_dirBar->directory(); }, m_shujuko);
+    m_sattumaPicTab = new SattumaPicTab(
+        [this]{ return m_dirBar->directory(); }, m_shujuko);
+    m_madoludusTab  = new MadoludusTab(
+        [this]{ return m_dirBar->directory(); });
+    m_shortcutsTab  = new ShortcutsTab;
+
+    // Signalkette: DB1 -> MainWindow -> alle betroffenen Tabs
+    DirDatabasePanel* db1 = m_aleaVueTab->dbPanel();
+    connect(m_aleaVueTab, &AleaVueTab::requestDirChange,
+            this, &MainWindow::onDirFromDb);
+    connect(db1, &DirDatabasePanel::dirLoaded,
+            this, &MainWindow::onDb1FilesLoaded);
+    connect(db1, &DirDatabasePanel::activeEntryChanged,
+            this, &MainWindow::onActiveEntryChanged);
+    connect(db1, &DirDatabasePanel::requestShujukoValidation,
+            m_shujuko, &ShujukoPanel::validateFiles);
+
+    m_tabs->addTab(m_aleaVueTab,    "\U0001f5bc  AleaVue");
+    m_tabs->addTab(m_sattumaPicTab, "\U0001f3b2  SattumaPic");
+    m_tabs->addTab(m_madoludusTab,  "\U0001f39e  MadoLudus");
+    m_tabs->addTab(m_shortcutsTab,  "About");
+    mv->addWidget(m_tabs);
+
+    // Schloss-Symbol in der Statusleiste
+    m_secretIndicator = new QLabel("\U0001f512");
+    statusBar()->addPermanentWidget(m_secretIndicator);
+
+    m_secretShortcut = new QShortcut(
+        QKeySequence("Ctrl+Alt+F8"), this);
+    m_secretShortcut->setContext(Qt::ApplicationShortcut);
+    connect(m_secretShortcut, &QShortcut::activated,
+            this, &MainWindow::toggleSecretMode);
+}
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: Lambda als Callback}
+
+\begin{lstlisting}
+m_aleaVueTab = new AleaVueTab(
+    [this]{ return m_dirBar->directory(); }, m_shujuko);
+\end{lstlisting}
+
+Ein \textbf{Lambda-Ausdruck} wird als
+\verb|std::function<QString()>| uebergeben:
+\begin{itemize}[noitemsep]
+  \item \verb|[this]| -- der Lambda-Closure haelt eine
+    Kopie des \texttt{this}-Zeigers von \klasse{MainWindow}
+  \item \verb|{ return m_dirBar->directory(); }| -- liefert
+    beim Aufruf das aktuelle Verzeichnis aus der DirBar
+\end{itemize}
+Damit muss \klasse{AleaVueTab} kein \klasse{MainWindow}
+kennen -- \emph{Dependency Inversion Principle}.
+
+\subsubsection{v0.5.42 neu: closeEvent}
+
+\begin{lstlisting}[caption={closeEvent: warten auf laufende Saves}]
+void MainWindow::closeEvent(QCloseEvent* event) {
+    // Blockiert kurz (Event-Loop pumpen), bis in-flight
+    // Saves auf Disk abgeschlossen sind.
+    // Details: DirDatabasePanel::flushPendingWrites().
+    m_aleaVueTab->dbPanel()->flushPendingWrites();
+    m_shujuko->flushPendingWrites();
+    QMainWindow::closeEvent(event);  // Basisklasse!
+}
+\end{lstlisting}
+
+Ohne diese Methode koennte ein "Save to DB"-Thread,
+der genau beim Beenden des Programms lief, mitten im
+Schreiben abgebrochen werden -- das JSON waere dann
+korrupt.
+
+\subsubsection{Qt-Analyse: Signalkette}
+
+Wenn der Nutzer einen DB-Eintrag doppelklickt:
+
+\begin{enumerate}[noitemsep]
+  \item \klasse{DirDatabasePanel} emittiert
+    \signal{dirLoaded(path, imageFiles, allFiles)}
+  \item \slot{MainWindow::onDb1FilesLoaded} empfaengt
+  \item Leitet \verb|path + allFiles| an
+    \klasse{SattumaPicTab} weiter
+  \item Leitet \verb|path + allFiles| an
+    \klasse{MadoludusTab} weiter
+\end{enumerate}
+
+Alle Tabs bekommen die Daten -- ohne sich gegenseitig
+zu kennen.
+
+\section{Gemeinsam genutzte Hilfsdateien}
+
+\subsection{pathutils.h / pathutils.cpp}
+
+Alle anwendungsweiten Pfade, Dateinamen-Hilfsfunktionen
+und plattformspezifische Calls sind im Namespace \ns{TV}
+gebuendelt.
+
+\begin{lstlisting}[style=header, caption={pathutils.h}]
+namespace TV {
+    QString scriptDir();    // Verzeichnis der .exe
+    QString kaivoDir();     // .../optegnelser/kaivo/
+    QString kaivoDbPath();  // .../kaivo/tilvista_dirs.json
+    QString shujukoPath(const QString& kaivoEntryName);
+    QString logDir();       // .../optegnelser/
+    QString safeFilename(const QString& name);
+    QString autoEntryName(const QString& dirPath);
+
+    const QStringList& imageSuffixes(); // .jpg, .png, ...
+    const QStringList& videoSuffixes(); // .mp4, .mkv, ...
+    QStringList allMediaSuffixes();
+
+    void openPath(const QString& path);
+    void selectInExplorer(const QString& path);
+    void preventSleep();  // Win32: SetThreadExecutionState
+    void restoreSleep();
+}
+\end{lstlisting}
+
+\paragraph{Statische lokale Variable -- Singleton-Initialisierung}
+\begin{lstlisting}
+const QStringList& imageSuffixes() {
+    static const QStringList s = {
+        ".jpg", ".jpeg", ".png", ".webp",
+        ".heic", ".heif", ".avif", ".tif", ...
+    };
+    return s;
+}
+\end{lstlisting}
+\verb|static| bei einer lokalen Variable: Initialisierung
+genau einmal beim ersten Aufruf, danach im Speicher bis
+Programmende. Rueckgabe als \verb|const QStringList&|
+(Referenz) -- keine Kopie bei jedem Aufruf.
+
+\paragraph{Raw-String-Literal R"(...)" und safeFilename}
+\begin{lstlisting}
+QString safeFilename(const QString& name) {
+    static const QString bad = R"(\/:*?"<>|)";
+    QString out;
+    for (QChar c : name)
+        out += bad.contains(c) ? QChar('_') : c;
+    while (out.startsWith('.')) out.remove(0,1);
+    return out.isEmpty()
+        ? QStringLiteral("entry") : out;
+}
+\end{lstlisting}
+\verb|R"(...)"| ist ein \textbf{Raw-String-Literal} (C++11):
+Backslashes und Anfuehrungszeichen brauchen kein Escape.
+\verb|QStringLiteral| erzeugt den String zur Compile-Zeit.
+
+\paragraph{Plattformspezifischer Code mit Q\_OS\_WIN}
+\begin{lstlisting}
+void preventSleep() {
+#ifdef Q_OS_WIN
+    SetThreadExecutionState(
+        ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+#endif
+}
+\end{lstlisting}
+Qt-eigene Praeprozessormakros (\verb|Q_OS_WIN|,
+\verb|Q_OS_MAC|, \verb|Q_OS_LINUX|) machen den Code
+portable: Auf Nicht-Windows-Systemen kompiliert die
+Funktion als leere Huelle.
+
+\subsection{config.h / config.cpp}
+
+\klasse{Config} liest beim Programmstart einmalig
+\datei{tilvista\_config.json} und stellt Einstellungen
+als statische Klassenmitglieder bereit.
+
+\begin{lstlisting}[style=header, caption={config.h}]
+class Config {
+public:
+    static void     load();
+    static QVariant get(const QString& key);
+    static bool     getBool(const QString& key);
+private:
+    static QJsonObject s_data;
+    static QJsonObject s_defaults;
+};
+\end{lstlisting}
+
+\paragraph{Statische Membervariablen -- Klassenweites Singleton}
+\verb|static QJsonObject s_data| gehoert der Klasse,
+nicht einer Instanz. Es gibt genau ein \verb|s_data|
+im gesamten Programm -- klassisches Singleton-Muster
+ohne Overhead.
+
+\begin{qtinfo}
+\textbf{QJsonObject als Konfigurationsspeicher:}
+Qt stellt \klasse{QJsonObject}, \klasse{QJsonArray} und
+\klasse{QJsonDocument} fuer vollstaendiges JSON-Handling
+bereit. Parsing:
+\begin{lstlisting}
+QJsonParseError err;
+auto doc = QJsonDocument::fromJson(f.readAll(), &err);
+if (err.error == QJsonParseError::NoError
+    && doc.isObject())
+    s_data = doc.object();
+\end{lstlisting}
+Dokumentation: \url{https://doc.qt.io/qt-6/qjsondocument.html}
+\end{qtinfo}

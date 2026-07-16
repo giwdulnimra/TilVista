@@ -1,0 +1,381 @@
+% ============================================================
+%  Kapitel 6: Zusammenfassung
+% ============================================================
+\chapter{Zusammenfassung}
+
+% ============================================================
+\section{Architektur -- Rueckblick}
+% ============================================================
+
+TilVista v0.5.42 demonstriert eine durchgaengige,
+signalgesteuerte Qt6-Architektur. Die wichtigsten
+Entwurfsentscheidungen im Rueckblick:
+
+\subsection{Entkopplung durch std::function-Callbacks}
+
+Kein Tab importiert den Header eines anderen Tabs.
+Statt \verb|MainWindow*| als Parameter erhalten alle
+Tabs ein Lambda:
+
+\begin{lstlisting}
+// In MainWindow::MainWindow():
+m_aleaVueTab = new AleaVueTab(
+    [this]{ return m_dirBar->directory(); },
+    m_shujuko);
+\end{lstlisting}
+
+Das entspricht dem \emph{Dependency Inversion Principle}
+(DIP) aus den SOLID-Prinzipien: Abhaengigkeit von einer
+Abstraktion (Funktion), nicht von einer konkreten Klasse.
+
+\subsection{Unidirektionale Signalkette}
+
+Zustandsaenderungen fliessen immer von einem Sender
+durch \klasse{MainWindow} zu den betroffenen Empfaengern
+-- niemals direkt zwischen Tabs:
+
+\begin{center}
+\small
+\begin{tabular}{ccc}
+\texttt{DirDatabasePanel} &
+\(\longrightarrow\) \textit{Signal} \(\longrightarrow\) &
+\texttt{MainWindow} \\
+& & \(\downarrow\) \\
+& & \texttt{SattumaPicTab} \\
+& & \texttt{MadoludusTab} \\
+\end{tabular}
+\end{center}
+
+Kein Tab reagiert direkt auf Signale eines anderen Tabs.
+Das macht den Datenfluss nachvollziehbar und
+Fehlerquellen leicht lokalisierbar.
+
+\subsection{Worker-Thread-Muster durchgaengig}
+
+Jede datei-IO-Operation laeuft in einem eigenen
+\klasse{QThread} mit dem Worker-Object-Muster:
+
+\begin{lstlisting}
+auto* worker = new MeinWorker(parameter);
+auto* thread = new QThread;
+worker->moveToThread(thread);
+connect(thread, &QThread::started,
+        worker, &MeinWorker::run);
+connect(worker, &MeinWorker::resultReady,
+        this,   &MeineKlasse::onErgebnis);
+connect(worker, &MeinWorker::resultReady,
+        thread, &QThread::quit);
+connect(worker, &MeinWorker::resultReady,
+        worker, &QObject::deleteLater);
+connect(thread, &QThread::finished,
+        thread, &QObject::deleteLater);
+thread->start();
+\end{lstlisting}
+
+Der GUI-Thread blockiert nie. Fortschritt kommt per
+\signal{progressChanged(int)}, Ergebnis per
+\signal{resultReady}.
+
+\subsection{safeStop-Idiom}
+
+Vor jedem Thread-Start werden alle Signal-Verbindungen
+des alten Threads zum Empfaenger getrennt:
+
+\begin{lstlisting}
+static void safeStop(QThread*& t, QObject* receiver) {
+    if (!t) return;
+    t->disconnect(receiver);
+    t = nullptr;
+}
+\end{lstlisting}
+
+Das verhindert Stale-Signal-Bugs ohne Mutex oder
+\verb|QThread::wait()| (das wegen Queued-Connections
+deadlocken wuerde).
+
+\subsection{Optionale Abhaengigkeit: TV\_NO\_MULTIMEDIA}
+
+Qt Multimedia wird per \cmake{find\_package QUIET}
+gesucht. Nicht gefunden: \makro{TV\_NO\_MULTIMEDIA}
+wird als Praeprozessor-Makro definiert. Im Code
+steuern \verb|#ifndef|/\verb|#ifdef| die Codepfade.
+Das Programm kompiliert und laeuft in beiden Faellen.
+
+\subsection{v0.5.42: MadoLudus-Refactor}
+
+Die Trennung von \klasse{MadoludusTab}
+(Konfiguration) und \klasse{MadoludusWindow}
+(Wiedergabe) reduzierte eine 800-Zeilen-Monolith-Klasse
+auf zwei klar abgegrenzte Verantwortlichkeiten.
+Das Fenster kommuniziert per zwei Signalen zurueck:
+\signal{windowClosed()} und
+\signal{currentFileChanged(QString)}.
+
+% ============================================================
+\section{C++-Konzepte im Ueberblick}
+% ============================================================
+
+\begin{longtable}{p{4.2cm}p{4.2cm}p{5cm}}
+\toprule
+\textbf{Konzept} & \textbf{Datei(en)} & \textbf{Zweck} \\
+\midrule
+\endfirsthead
+\midrule
+\endhead
+\verb|std::function<T>| &
+  aleavuetab, sattumapictab, madoludustab &
+  Callback ohne harte Abhaengigkeit \\[4pt]
+
+\verb|std::mt19937| + \verb|std::random_device| &
+  sattumapictab, slideshowwindow, madoluduswindow &
+  Qualitaetszufall, OS-Entropie als Seed \\[4pt]
+
+\verb|static| (lokal) &
+  pathutils, DirDatabasePanel &
+  Einmalige Initialisierung, Singleton-Muster \\[4pt]
+
+\verb|static constexpr| &
+  slideshowwindow, videopreviewwidget, madoluduswindow &
+  Compile-Zeit-Konstanten, typsicher \\[4pt]
+
+\verb|= nullptr| / \verb|= false| (In-class-Init) &
+  alle Klassen &
+  Sichere Member-Initialisierung ohne Konstruktor \\[4pt]
+
+\verb|override| &
+  alle Qt-Subklassen &
+  Compiler prueft korrekte Methodensignatur \\[4pt]
+
+Raw-String \verb|R"(...)"| &
+  pathutils, videoframesworker &
+  Sonderzeichen ohne Escape-Sequenzen \\[4pt]
+
+\verb|enum class| &
+  videoframesworker &
+  Stark typisiertes Enum, kein implizites \verb|int| \\[4pt]
+
+\verb|try/catch(...)| &
+  scanworker &
+  Alle Exceptions im Worker-Thread abfangen \\[4pt]
+
+Template-Funktion &
+  dirdatabasepanel &
+  DRY: generischer Thread-Starter \verb|launchWorker<>| \\[4pt]
+
+\verb|sizeof(arr)/sizeof(arr[0])| &
+  madoludustab &
+  Compile-Zeit-Arraylaenge \\[4pt]
+
+\verb|explicit| Konstruktor &
+  alle Klassen &
+  Verhindert ungewollte implizite Konvertierungen \\[4pt]
+
+\verb|QStringLiteral| &
+  pathutils &
+  Compile-Zeit-String, schneller als Laufzeit-Konstruktion \\[4pt]
+
+\verb|struct| mit Defaults &
+  madoluduswindow &
+  Konfigurationsdaten ohne Konstruktor-Boilerplate \\[4pt]
+
+\bottomrule
+\end{longtable}
+
+% ============================================================
+\section{Qt-Konzepte im Ueberblick}
+% ============================================================
+
+\begin{longtable}{p{4.0cm}p{4.4cm}p{5cm}}
+\toprule
+\textbf{Klasse / Konzept} & \textbf{Datei(en)} & \textbf{Zweck} \\
+\midrule
+\endhead
+
+\klasse{QMainWindow} &
+  mainwindow, slideshowwindow, madoluduswindow &
+  Vollstaendiges Fenster mit Status\-leiste \\[4pt]
+
+\klasse{QWidget} &
+  alle Tab-Klassen, Panels &
+  Basis aller GUI-Elemente \\[4pt]
+
+\klasse{QTabWidget} &
+  mainwindow &
+  Tab-Navigation zwischen den Werkzeugen \\[4pt]
+
+\klasse{QStackedWidget} &
+  videopreviewwidget &
+  Zwischen Seiten umschalten (Video / Bild) \\[4pt]
+
+\klasse{QTimer} &
+  slideshowwindow, madoluduswindow, videopreview &
+  Zeitgesteuerte Ereignisse ohne Blocker \\[4pt]
+
+\klasse{QThread} + moveToThread &
+  alle Worker &
+  Hintergrundarbeit ohne GUI-Blockade \\[4pt]
+
+Queued Connection &
+  alle Worker-Signale &
+  Automatisch thread-sicherer Signal-Transport \\[4pt]
+
+\verb|deleteLater()| &
+  alle Worker &
+  Thread-sicheres Aufraeuimen von QObjects \\[4pt]
+
+\klasse{QDirIterator} &
+  scanworker &
+  Rekursive Verzeichnis-Traversal \\[4pt]
+
+\klasse{QImageReader} &
+  slideshowwindow, sattumapictab, madoluduswindow &
+  Effizientes Laden mit Vorab-Skalierung \\[4pt]
+
+\klasse{QPainter} &
+  madooverlay, previewlabel &
+  2D-Zeichenoperationen, Custom-Painting \\[4pt]
+
+\klasse{QJsonObject} / \klasse{QJsonDocument} &
+  config, dbworkers, shujukopanel &
+  JSON-Persistenz, Copy-on-Write \\[4pt]
+
+\klasse{QProcess} &
+  videoframesworker &
+  Externe Programme (ffmpeg) starten \\[4pt]
+
+\klasse{QRegularExpression} &
+  videoframesworker, dirdatabasepanel &
+  PCRE2-Regex, statisch kompiliert \\[4pt]
+
+\klasse{QShortcut} &
+  mainwindow &
+  App-weite Tastenkuerzel \\[4pt]
+
+\klasse{QFileIconProvider} &
+  sattumapictab &
+  Native OS-Datei-Icons \\[4pt]
+
+\klasse{QMediaPlayer} + \klasse{QVideoWidget} &
+  videopreviewwidget, madoluduswindow &
+  Native Videowiedergabe \\[4pt]
+
+\makro{Q\_OS\_WIN} / \makro{TV\_NO\_MULTIMEDIA} &
+  pathutils, alle Multimedia-Klassen &
+  Plattform- und Feature-bedingte Compilation \\[4pt]
+
+\verb|Qt::ApplicationShortcut| &
+  mainwindow &
+  Kuerzel auch bei Fokus in Eingabefeld aktiv \\[4pt]
+
+\verb|Qt::FramelessWindowHint| &
+  madoluduswindow &
+  Rahmenlos + manuell verschiebbar \\[4pt]
+
+\verb|WA_DeleteOnClose| &
+  madoluduswindow, slideshowwindow &
+  Automatisches Loeschen beim Schliessen \\[4pt]
+
+\bottomrule
+\end{longtable}
+
+% ============================================================
+\section{Empfohlener Lernpfad}
+% ============================================================
+
+Fuer den Einstieg in TilVista als Lernprojekt empfiehlt
+sich folgende Lesereihenfolge -- von einfach nach komplex:
+
+\begin{enumerate}
+  \item \textbf{main.cpp} --
+    Einstiegspunkt, \klasse{QApplication}, \klasse{Config},
+    erstes Fenster; zwei Dutzend Zeilen die das grosse Bild
+    zeigen
+
+  \item \textbf{pathutils.h + pathutils.cpp} --
+    Namespace, statische lokale Variablen,
+    \verb|#ifdef Q_OS_WIN|, Raw-Strings; keine Qt-Abhaengigkeit
+    ausser \klasse{QString}
+
+  \item \textbf{config.h + config.cpp} --
+    Statische Membervariablen, \klasse{QJsonDocument},
+    einfachstes moegliches Singleton
+
+  \item \textbf{scanworker.h + scanworker.cpp} --
+    Erstes vollstaendiges Worker-Thread-Beispiel,
+    \klasse{QDirIterator}, Signal-Fortschritt,
+    \verb|try/catch|
+
+  \item \textbf{mainwindow.h + mainwindow.cpp} --
+    \klasse{QMainWindow}, Layout, Lambda-Callbacks,
+    Signalkette, \verb|closeEvent|
+
+  \item \textbf{slideshowwindow.h + slideshowwindow.cpp} --
+    \klasse{QTimer}, \verb|keyPressEvent|,
+    \klasse{QImageReader} mit Vorab-Skalierung,
+    Verlaufslogik, Vollbild-Cursor
+
+  \item \textbf{dirdatabasepanel.h + dirdatabasepanel.cpp} --
+    JSON-Persistenz, drei parallele Threads,
+    \verb|safeStop|, \verb|setBusy|,
+    \verb|flushPendingWrites|, Template-Helfer
+
+  \item \textbf{shujukopanel.h + shujukopanel.cpp} --
+    Zweites JSON-Schema, Bool-Guard,
+    \verb|validateFiles|, \verb|flushPendingWrites|
+
+  \item \textbf{videoframesworker.h + videoframesworker.cpp} --
+    \klasse{QProcess}, \verb|enum class|,
+    dauer-bewusste Timestamps, Regex auf stderr
+
+  \item \textbf{madoluduswindow.h + madoluduswindow.cpp} --
+    Rahmenlos, Drag-to-Move, History-Navigation,
+    optionale Multimedia, \verb|WA\_DeleteOnClose|
+
+  \item \textbf{madoludustab.h + madoludustab.cpp} --
+    Konfiguration trennen von Ausfuehrung,
+    \verb|buildConfig()|, \verb|sizeof|-Trick
+
+  \item \textbf{madooverlay.h + madooverlay.cpp} --
+    Custom \verb|paintEvent|, Unicode-Emojis,
+    Stylesheet-Zustandsaenderung per Methode
+\end{enumerate}
+
+% ============================================================
+\section{Weiterfuehrende Ressourcen}
+% ============================================================
+
+\begin{description}[leftmargin=3cm, style=nextline]
+  \item[Qt-Dokumentation]
+    \url{https://doc.qt.io/qt-6/}\\
+    Vollstaendige API-Referenz, Beispiele und Guides
+
+  \item[Signals \& Slots]
+    \url{https://doc.qt.io/qt-6/signalsandslots.html}\\
+    Ausfuehrliche Erklaerung beider Syntaxen
+
+  \item[Threading-Guide]
+    \url{https://doc.qt.io/qt-6/thread-basics.html}\\
+    Worker-Object-Muster, QThread-Lebenszyklus
+
+  \item[Model/View]
+    \url{https://doc.qt.io/qt-6/model-view-programming.html}\\
+    Naechster Schritt nach dem Widget-basierten Ansatz
+
+  \item[cppreference C++17]
+    \url{https://en.cppreference.com/}\\
+    Lambda, std::function, constexpr, enum class
+
+  \item[C++ Core Guidelines]
+    \url{https://isocpp.github.io/CppCoreGuidelines/}\\
+    Empfohlene Idiome (RAII, Rule of Five, etc.)
+
+  \item[CMake-Dokumentation]
+    \url{https://cmake.org/cmake/help/latest/}\\
+    find\_package, Generator-Expressions, Funktionen
+
+  \item[CTAN: babel-german]
+    \url{https://ctan.org/pkg/babel-german}\\
+    Installation des fehlenden deutschen Babel-Pakets
+    (dann kann in \datei{packages.tex} \verb|\usepackage[ngerman]{babel}|
+    aktiviert werden)
+\end{description}

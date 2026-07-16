@@ -1,0 +1,580 @@
+% ============================================================
+%  Kapitel 3: SattumaPic -- Zufaelliger Dateiaufruf
+% ============================================================
+\chapter{Tab 2 -- SattumaPic: Zufaelliger Dateiaufruf}
+
+% ============================================================
+\section{Funktionsweise}
+% ============================================================
+
+SattumaPic oeffnet zufaellige Dateien aus einem Verzeichnis.
+Anders als AleaVue arbeitet es mit \emph{beliebigen}
+Dateitypen -- nicht nur Bildern.
+Eine Vorschau (Bild, Video oder Dateisystem-Icon) erscheint
+im rechten Bereich. Das eingebettete \klasse{ShujukoPanel}
+gibt Zugriff auf gebookmarkte Dateien.
+
+\textbf{Ablauf:}
+\begin{enumerate}[noitemsep]
+  \item Verzeichnis setzen oder kaivo-Eintrag laden
+  \item Klick auf \emph{Random File} -- zufaellige Datei
+    aus \member{m\_allFiles}
+  \item Optional: \emph{Auto-pick on dir select} waehlt
+    sofort beim Setzen des Verzeichnisses
+  \item Optional: \emph{Auto-open on random} oeffnet
+    die Datei sofort mit dem Standard-Programm
+  \item \emph{Select in File's Directory} oeffnet den
+    Datei-Explorer und markiert die Datei
+  \item \klasse{ShujukoPanel} links erlaubt direkten
+    Zugriff auf gebookmarkte Dateien des aktiven
+    kaivo-Eintrags
+\end{enumerate}
+
+% ============================================================
+\section{File by File}
+% ============================================================
+
+\subsection{sattumapictab.h}
+
+\begin{lstlisting}[style=header, caption={sattumapictab.h}]
+#pragma once
+#include <QStringList>
+#include <QWidget>
+#include <functional>
+
+class QCheckBox;
+class QLabel;
+class QProgressBar;
+class QPushButton;
+class QThread;
+class ShujukoPanel;
+class VideoPreviewWidget;
+
+class SattumaPicTab : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit SattumaPicTab(
+        std::function<QString()> getGlobalDir,
+        ShujukoPanel*            shujuko,
+        QWidget* parent = nullptr);
+
+    // allFiles = {} als Default-Argument:
+    // Aufruf ohne Cache oder mit Cache moeglich
+    void onDirectoryChanged(const QString& path,
+                            const QStringList& allFiles = {});
+
+private slots:
+    void onPickRandom();
+    void onScanDone(bool ok,
+                    QStringList imageFiles,
+                    QStringList allFiles);
+    void onOpenFile();
+    void onSelectInDir();
+    void onPreviewFromShujuko(const QString& path);
+
+private:
+    void buildUi();
+    void scanAndPick(const QString& path);
+    void displayFile(const QString& path);
+    void updatePreview(const QString& path);
+
+    std::function<QString()> m_getGlobalDir;
+    ShujukoPanel*            m_shujuko;  // shared, not owned
+
+    QString     m_randomFile;
+    QStringList m_allFiles;
+
+    QLabel*             m_lblFile     = nullptr;
+    QProgressBar*       m_pb          = nullptr;
+    QPushButton*        m_btnRandom   = nullptr;
+    QPushButton*        m_btnOpenFile = nullptr;
+    QPushButton*        m_btnOpenDir  = nullptr;
+    QCheckBox*          m_chkAutoPick = nullptr;
+    QCheckBox*          m_chkAutoOpen = nullptr;
+    VideoPreviewWidget* m_preview     = nullptr;
+    QLabel*             m_lblType     = nullptr;
+    QThread*            m_scanThread  = nullptr;
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: Default-Argument}
+
+\begin{lstlisting}
+void onDirectoryChanged(const QString& path,
+                        const QStringList& allFiles = {});
+\end{lstlisting}
+
+\verb|= {}| ist ein Default-Argument -- wenn
+\verb|allFiles| nicht uebergeben wird, erhaelt der
+Parameter eine leere \klasse{QStringList}.
+Zwei Aufrufer nutzen dieselbe Methode unterschiedlich:
+\begin{itemize}[noitemsep]
+  \item \klasse{MainWindow::onDirChanged} -- ohne allFiles
+    (Verzeichnis manuell gesetzt, kein Cache vorhanden)
+  \item \klasse{MainWindow::onDb1FilesLoaded} -- mit allFiles
+    (aus DB geladen, Cache direkt uebernehmen, kein Scan)
+\end{itemize}
+
+% ----------------------------------------------------------
+\subsection{sattumapictab.cpp}
+% ----------------------------------------------------------
+
+\subsubsection{onPickRandom -- C++11-Zufallsgenerator}
+
+\begin{lstlisting}[caption={onPickRandom: Zufallsauswahl und Auto-Open}]
+void SattumaPicTab::onPickRandom() {
+    const QString dir = m_getGlobalDir();
+    if (dir.isEmpty()) {
+        QMessageBox::warning(this, "No Directory",
+            "Please select a directory first.");
+        return;
+    }
+    // Noch keine Dateiliste? Erst scannen, dann waehleneinen
+    if (m_allFiles.isEmpty()) {
+        scanAndPick(dir);
+        return;
+    }
+    // C++11 Mersenne-Twister mit OS-Entropie-Seed
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<int>
+        dist(0, m_allFiles.size()-1);
+
+    m_randomFile = m_allFiles.at(dist(rng));
+    displayFile(m_randomFile);
+
+    // Auto-Open: Datei sofort mit System-Programm oeffnen
+    if (m_chkAutoOpen->isChecked()) onOpenFile();
+}
+\end{lstlisting}
+
+\subsubsection{updatePreview -- Dateityp-Erkennung}
+
+\begin{lstlisting}[caption={updatePreview: drei Zweige fuer Bild/Video/sonstige}]
+void SattumaPicTab::updatePreview(const QString& path) {
+    const QString ext =
+        '.' + QFileInfo(path).suffix().toLower();
+
+    // -- Bild? ------------------------------------------------
+    if (TV::imageSuffixes().contains(ext)) {
+        QImageReader reader(path);
+        const QSize orig = reader.size();
+        // Vorab-Skalierung fuer grosse Bilder
+        if (orig.isValid() &&
+            (orig.width() > 1024 || orig.height() > 1024))
+        {
+            const double s = qMin(1024.0/orig.width(),
+                                  1024.0/orig.height());
+            reader.setScaledSize(
+                QSize(int(orig.width()  * s),
+                      int(orig.height() * s)));
+        }
+        const QImage img = reader.read();
+        if (!img.isNull()) {
+            m_preview->showPixmap(
+                QPixmap::fromImage(img),
+                QString("Image  %1").arg(ext));
+            return;
+        }
+    }
+
+    // -- Video? -----------------------------------------------
+    if (TV::videoSuffixes().contains(ext)) {
+        m_preview->play(path);
+        return;
+    }
+
+    // -- Beliebige Datei: System-Icon verwenden ---------------
+    QFileIconProvider fip;
+    const QIcon icon = fip.icon(QFileInfo(path));
+    if (!icon.isNull())
+        m_preview->showPixmap(
+            icon.pixmap(QSize(128,128)),
+            QString("File  %1").arg(ext));
+    else
+        m_preview->clearPreview();
+}
+\end{lstlisting}
+
+\begin{qtinfo}[title={Qt-Hintergrund: QFileIconProvider}]
+\klasse{QFileIconProvider} liefert das native
+Betriebssystem-Icon fuer einen Dateityp -- exakt das Icon,
+das der Windows Explorer, macOS Finder oder Linux-Dateimanager
+anzeigen wuerde. TilVista muss die assoziierten Programme
+nicht kennen. Das Icon kommt direkt vom OS.\\
+Referenz: \url{https://doc.qt.io/qt-6/qfileiconprovider.html}
+\end{qtinfo}
+
+\subsubsection{Config-Integration: Auto-Pick und Auto-Open}
+
+\begin{lstlisting}[caption={buildUi: Einstellungen aus Config laden}]
+m_chkAutoPick = new QCheckBox("Auto-pick on dir select");
+m_chkAutoPick->setChecked(
+    Config::getBool("auto_pick_on_dir_select"));
+
+m_chkAutoOpen = new QCheckBox("Auto-open on random");
+m_chkAutoOpen->setChecked(
+    Config::getBool("auto_open_on_random"));
+\end{lstlisting}
+
+Die Standardwerte kommen aus \klasse{Config::s\_defaults}:
+\begin{itemize}[noitemsep]
+  \item \verb|auto_pick_on_dir_select| -- Standard: \verb|true|
+  \item \verb|auto_open_on_random| -- Standard: \verb|false|
+\end{itemize}
+
+Persistenz ueber Programmstarts hinweg erfolgt
+\emph{ausschliesslich} ueber \datei{tilvista\_config.json}.
+Es gibt keinen "Einstellungen speichern"-Button --
+die Datei muss manuell bearbeitet werden.
+
+% ----------------------------------------------------------
+\subsection{videopreviewwidget.h / videopreviewwidget.cpp}
+% ----------------------------------------------------------
+
+\subsubsection{Aufbau: QStackedWidget mit zwei Seiten}
+
+\klasse{VideoPreviewWidget} erbt von \klasse{QStackedWidget}
+und verwaltet zwei Anzeigeseiten:
+
+\begin{center}
+\small
+\begin{tabular}{cll}
+\toprule
+\textbf{Index} & \textbf{Widget} & \textbf{Verwendung} \\
+\midrule
+0 & \klasse{QVideoWidget} & Native Videowiedergabe \\
+  &                       & (nur ohne \makro{TV\_NO\_MULTIMEDIA}) \\
+1 & \klasse{PreviewLabel} & Einzelbilder und ffmpeg-Frames \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}[style=header, caption={videopreviewwidget.h}]
+class VideoPreviewWidget : public QStackedWidget {
+    Q_OBJECT
+public:
+    explicit VideoPreviewWidget(QWidget* parent=nullptr);
+    ~VideoPreviewWidget() override;
+
+    void play(const QString& path);
+    void showPixmap(const QPixmap& pm,
+                    const QString& label = {});
+    void clearPreview();
+
+signals:
+    void statusText(const QString& text);
+
+private slots:
+    void onFramesReady(bool ok, const QStringList& paths);
+    void nextFrame();
+
+private:
+    void stop_();
+    void cleanupTmp();
+
+    QMediaPlayer* m_player    = nullptr;
+    QAudioOutput* m_audio     = nullptr;
+    QVideoWidget* m_videoW    = nullptr;
+    PreviewLabel* m_frameLabel;
+    QTimer*       m_cycleTimer;
+
+    QStringList m_framePaths;
+    int         m_frameIdx = 0;
+    QString     m_tmpDir;
+    QThread*    m_vidThread = nullptr;
+
+    // 10 Sekunden pro Frame im Vorschau-Modus
+    static constexpr int kCycleMs = 10000;
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: constexpr statt \#define}
+
+\begin{lstlisting}
+static constexpr int kCycleMs = 10000;
+\end{lstlisting}
+
+\verb|constexpr| ist die moderne C++-Alternative zu
+\verb|#define CYCLE_MS 10000|:
+\begin{itemize}[noitemsep]
+  \item \textbf{Typsicher}: Der Compiler prueft den Typ
+    (\verb|int|), \verb|#define| ist text-Substitution
+  \item \textbf{Scoped}: \verb|kCycleMs| gehoert zur
+    Klasse, kein globaler Namensraumverschmutz
+  \item \textbf{Debuggable}: Debugger kennen den Namen,
+    bei \verb|#define| sieht man nur die Zahl
+\end{itemize}
+
+\subsubsection{play() -- nativer oder ffmpeg-Fallback}
+
+\begin{lstlisting}[caption={play: zwei Codepfade je nach Multimedia-Verfuegbarkeit}]
+void VideoPreviewWidget::play(const QString& path) {
+    stop_();
+    cleanupTmp();
+
+#ifndef TV_NO_MULTIMEDIA
+    // Nativer Pfad: QMediaPlayer stumm, Endlos-Loop
+    if (m_player) {
+        setCurrentIndex(0);  // QVideoWidget-Seite
+        m_player->setSource(QUrl::fromLocalFile(path));
+        m_player->play();
+        emit statusText("Video  (QMediaPlayer -- muted)");
+        return;
+    }
+#endif
+
+    // Fallback: ffmpeg-Frames extrahieren und zyklisch anzeigen
+    setCurrentIndex(1);  // PreviewLabel-Seite
+    emit statusText("Video -- extracting frames...");
+
+    auto* w = new VideoFramesWorker(path);
+    m_tmpDir = w->tmpDir();
+    auto* t  = new QThread;
+    m_vidThread = t;
+    w->moveToThread(t);
+    connect(t, &QThread::started,
+            w, &VideoFramesWorker::run);
+    connect(w, &VideoFramesWorker::resultReady,
+            this, &VideoPreviewWidget::onFramesReady);
+    connect(w, &VideoFramesWorker::resultReady,
+            t, &QThread::quit);
+    connect(w, &VideoFramesWorker::resultReady,
+            w, &QObject::deleteLater);
+    connect(t, &QThread::finished,
+            t, &QObject::deleteLater);
+    t->start();
+}
+\end{lstlisting}
+
+\subsubsection{Qt-Analyse: stop\_() und cleanupTmp()}
+
+\begin{lstlisting}[caption={stop\_ und cleanupTmp: aufraeuemen vor neuem Inhalt}]
+void VideoPreviewWidget::stop_() {
+    m_cycleTimer->stop();
+#ifndef TV_NO_MULTIMEDIA
+    if (m_player) m_player->stop();
+#endif
+    if (m_vidThread) {
+        m_vidThread->quit();
+        m_vidThread = nullptr;
+        m_vidWorker = nullptr;
+    }
+}
+
+void VideoPreviewWidget::cleanupTmp() {
+    if (!m_tmpDir.isEmpty()) {
+        // Gesamtes temp-Verzeichnis rekursiv loeschen
+        QDir(m_tmpDir).removeRecursively();
+        m_tmpDir.clear();
+    }
+    m_framePaths.clear();
+    m_frameIdx = 0;
+}
+\end{lstlisting}
+
+\verb|QDir::removeRecursively()| loescht ein Verzeichnis
+mit allem Inhalt -- das Aequivalent zu \texttt{rm -rf}.
+Wichtig: Immer \methode{stop\_} und dann \methode{cleanupTmp}
+aufrufen, bevor neue Inhalte geladen werden, sonst wuerde
+ein laufender Frame-Timer auf geloeschte Dateien zeigen.
+
+% ----------------------------------------------------------
+\subsection{previewlabel.h / previewlabel.cpp}
+% ----------------------------------------------------------
+
+\klasse{PreviewLabel} erbt von \klasse{QLabel} und
+ueberschreibt \methode{resizeEvent}, um das Bild bei
+Groessenaenderung automatisch neu zu skalieren.
+
+\begin{lstlisting}[style=header, caption={previewlabel.h}]
+class PreviewLabel : public QLabel {
+    Q_OBJECT
+public:
+    explicit PreviewLabel(QWidget* parent = nullptr);
+    void setSourcePixmap(const QPixmap& pm);
+    void clearPreview();
+protected:
+    void resizeEvent(QResizeEvent* e) override;
+private:
+    void repaintScaled();
+    QPixmap m_source;  // Originalbild (ungekuerzt)
+};
+\end{lstlisting}
+
+\begin{lstlisting}[caption={previewlabel.cpp -- Kern}]
+void PreviewLabel::setSourcePixmap(const QPixmap& pm) {
+    m_source = pm;
+    repaintScaled();
+}
+void PreviewLabel::resizeEvent(QResizeEvent* e) {
+    QLabel::resizeEvent(e);  // Basisklasse aufrufen!
+    repaintScaled();
+}
+void PreviewLabel::repaintScaled() {
+    if (m_source.isNull()) return;
+    setPixmap(m_source.scaled(
+        size() - QSize(8,8),           // 4px Rand ringsum
+        Qt::KeepAspectRatio,
+        Qt::SmoothTransformation));
+}
+\end{lstlisting}
+
+\textbf{Das Muster}: \member{m\_source} haelt das
+Originalbild. Bei jedem \verb|resizeEvent| wird eine
+neu skalierte Kopie erzeugt und als Pixmap gesetzt.
+So sieht die Vorschau immer scharf aus, egal in welcher
+Fenstergroesse.
+
+\begin{hinweis}
+Beim Ueberschreiben von Event-Handlern muss die Methode
+der Basisklasse aufgerufen werden
+(\verb|QLabel::resizeEvent(e)|), damit die Basisklasse
+ihr eigenes Layout-Update durchfuehren kann. Wird dies
+vergessen, koennen Layoutfehler oder Rendering-Artefakte
+entstehen.
+\end{hinweis}
+
+% ----------------------------------------------------------
+\subsection{shujukopanel.h / shujukopanel.cpp (DB2)}
+% ----------------------------------------------------------
+
+\klasse{ShujukoPanel} (DB2) ist das Lesezeichen-System.
+Es erscheint eingebettet im linken Bereich von
+\klasse{SattumaPicTab}.
+
+\subsubsection{JSON-Schema}
+
+\begin{lstlisting}[language={},numbers=none,
+  caption={<entryname>\_shujuko.json}]
+{
+  "kaivo_entry": "Urlaub2025",
+  "source_dir":  "E:/Bilder/Urlaub2025",
+  "files": [
+    {
+      "path":     "E:/Bilder/.../IMG_001.jpg",
+      "added_at": "2025-08-01T15:30:00",
+      "missing":  false
+    }
+  ]
+}
+\end{lstlisting}
+
+Jeder kaivo-Eintrag hat eine eigene shujuko-JSON-Datei.
+\member{missing} wird von \methode{validateFiles}
+aktualisiert.
+
+\subsubsection{Klassendeklaration}
+
+\begin{lstlisting}[style=header, caption={shujukopanel.h -- Kern}]
+class ShujukoPanel : public QWidget {
+    Q_OBJECT
+public:
+    explicit ShujukoPanel(QWidget* parent = nullptr);
+
+    void setActiveKaivoEntry(const QString& entryName,
+                              const QString& sourceDir);
+    void addBookmark(const QString& filePath);
+    void validateFiles();
+    void setSecretMode(bool on);
+    QString currentJsonPath() const;
+
+    // v0.5.42: blockiert kurz bis laufender Save fertig
+    void flushPendingWrites();
+
+signals:
+    void fileSelected(const QString& path);
+
+private:
+    // ...Slots und Private-Methoden...
+    QString     m_entryName;
+    QString     m_sourceDir;
+    QString     m_jsonPath;
+    QJsonObject m_data;
+
+    QThread* m_thread = nullptr;
+    bool     m_saving = false;  // Guard: kein Doppel-Save
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: Bool-Guard gegen Doppel-Save}
+
+\begin{lstlisting}[caption={saveToDisk: m\_saving als einfacher Guard}]
+void ShujukoPanel::saveToDisk() {
+    if (m_jsonPath.isEmpty() || m_saving) return;
+    m_saving = true;  // Guard setzen
+
+    safeStopThread();
+    auto* worker = new DBSaveWorker(m_jsonPath, m_data);
+    auto* thread = new QThread;
+    m_thread = thread;
+    // ...Verbindungen...
+    thread->start();
+}
+
+void ShujukoPanel::onSaveDone(bool ok) {
+    m_saving = false;  // Guard zuruecksetzen
+    m_thread = nullptr;
+}
+\end{lstlisting}
+
+Wenn der Nutzer mehrere S-Tasten-Druecke schnell hintereinander
+ausfuehrt, wuerde ohne Guard jedes Mal ein neuer Save-Thread
+gestartet. Mit \member{m\_saving} wird der zweite Aufruf
+sofort abgewiesen -- der erste muss erst abgeschlossen sein.
+
+\begin{warnung}[title={Achtung: Kein Mutex noetig?}]
+Das funktioniert hier ohne \verb|std::mutex|, weil
+\methode{saveToDisk} und \methode{onSaveDone} beide
+im GUI-Thread laufen (verbunden als Auto-Connection
+innerhalb desselben Threads). Es gibt keine echte
+Race Condition -- der GUI-Thread ist single-threaded.
+Wuerde \methode{saveToDisk} aus einem Worker-Thread
+aufgerufen, waere ein Mutex zwingend noetig.
+\end{warnung}
+
+\subsubsection{Qt-Analyse: QJsonObject als Wert-Kopie}
+
+\begin{lstlisting}
+auto* worker = new DBSaveWorker(m_jsonPath, m_data);
+\end{lstlisting}
+
+\klasse{DBSaveWorker} haelt \verb|QJsonObject m_data|
+als \emph{Kopie}. Das ist thread-sicher, weil Qt-Wertobjekte
+(\klasse{QJsonObject}, \klasse{QString}, \klasse{QStringList})
+\emph{Copy-on-Write} (implizites Sharing) verwenden:
+Die Kopie ist guenstig (nur ein Referenzzaehler), und erst
+wenn jemand schreibt, wird wirklich kopiert. Beide
+Threads haben danach unabhaengige Kopien.
+
+\subsubsection{validateFiles -- Datei-Existenz pruefen}
+
+\begin{lstlisting}[caption={validateFiles: missing-Flag aktualisieren}]
+void ShujukoPanel::validateFiles() {
+    if (m_entryName.isEmpty()) return;
+    QJsonArray files = m_data.value("files").toArray();
+    bool changed = false;
+
+    for (int i = 0; i < files.size(); ++i) {
+        QJsonObject f = files[i].toObject();
+        const bool exists =
+            QFileInfo::exists(f.value("path").toString());
+        // Zustand hat sich geaendert?
+        if (f.value("missing").toBool() != !exists) {
+            f["missing"] = !exists;
+            files[i] = f;
+            changed = true;
+        }
+    }
+    if (changed) {
+        m_data["files"] = files;
+        refreshFileList();
+        saveToDisk();
+    }
+}
+\end{lstlisting}
+
+\verb|QFileInfo::exists(path)| ist eine statische Methode --
+kein Objekt noetig, ein einzelner Aufruf prueft die
+Datei-Existenz. Fehlende Eintraege erscheinen in der Liste
+mit Warn-Praefix und grauer Farbe.
