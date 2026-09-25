@@ -1,11 +1,11 @@
 #include "mainwindow.h"
-#include "aleavuetab.h"
-#include "dirdatabasepanel.h"
+#include "AleaVue_Tab/aleavuetab.h"
+#include "AleaVue_Tab/dirdatabasepanel.h"
 #include "dirbar.h"
-#include "madoludustab.h"
-#include "shortcutstab.h"
-#include "shujukopanel.h"
-#include "sattumapictab.h"
+#include "MadoLudus_Tab/madoludustab.h"
+#include "About_Tab/shortcutstab.h"
+#include "SattumaPic_Tab/shujukopanel.h"
+#include "SattumaPic_Tab/sattumapictab.h"
 
 #include <QCloseEvent>
 #include <QIcon>

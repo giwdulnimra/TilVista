@@ -1,0 +1,154 @@
+% ============================================================
+%  tilvista_doku.tex  --  Hauptdokument
+%
+%  Kompilierung (3 Durchlaeufe fuer TOC + Index):
+%    pdflatex tilvista_doku.tex
+%    makeindex tilvista_doku.idx
+%    pdflatex tilvista_doku.tex
+%    pdflatex tilvista_doku.tex
+%
+%  Verzeichnisstruktur:
+%    tilvista_doku.tex        <- dieses Dokument
+%    graphics/
+%      icon.png               <- App-Icon (PNG, mind. 64x64)
+%    src/
+%      packages/
+%        packages.tex         <- alle \usepackage-Befehle
+%        macros.tex           <- Farben, Stile, Makros, Seitenstil
+%      chapter1_allgemein.tex
+%      chapter2_aleavue.tex
+%      chapter3_sattumapic.tex
+%      chapter4_madoludus.tex
+%      chapter5_workers.tex
+%      chapter6_zusammenfassung.tex
+% ============================================================
+\documentclass[
+  12pt,
+  a4paper,
+  twoside,
+  headings=normal,
+  parskip=half
+]{scrreprt}
+
+% -- Pakete und Makros einbinden -----------------------------
+% Reihenfolge ist wichtig: packages.tex laedt alle Pakete,
+% macros.tex definiert Farben/Stile/Befehle die diese Pakete
+% voraussetzen. Beide vor \begin{document}.
+\input{src/packages/packages}
+\input{src/packages/macros}
+
+% ============================================================
+\begin{document}
+% ============================================================
+
+% -- Titelseite ----------------------------------------------
+\begin{titlepage}
+  \centering
+  \vspace*{2.5cm}
+
+  % Icon oben auf der Titelseite
+  \includegraphics[width=6cm]{graphics/icon}\\[1.5em]
+
+  {\Huge\bfseries\color{tvpurple2} TilVista}\\[0.5em]\color{tvpink3}
+  {\large Entwicklerdokumentation}\\[0.3em]
+  {\normalsize\color{tvpink1}%\color{tvwhite}%\color{gray}
+    Version 0.5.42 \textbullet{}
+    Qt 6.11 \textbullet{}
+    C++17 \textbullet{}
+    CMake 3.20}\\[3cm]
+
+  \begin{tcolorbox}[
+    width=0.72\textwidth,
+    colback=codebg, colframe=cppblue,
+    boxrule=0.8pt, arc=4pt,
+    left=10pt, right=10pt, top=8pt, bottom=8pt
+  ]
+  \centering\ttfamily\small
+  project(TilVista VERSION 0.5.42 LANGUAGES CXX)\\
+  setup\_qt\_target(\$\{PROJECT\_NAME\})
+  \end{tcolorbox}
+
+  \vfill
+  \color{tvwhite}
+  {\small Ludwig, Armin}\\[0.3em]
+  {\small Juli 2026}
+\end{titlepage}
+
+% -- Inhaltsverzeichnis --------------------------------------
+\tableofcontents
+\clearpage
+
+% ============================================================
+%  Kapitel einbinden
+% ============================================================
+
+% input vs. include:
+%   \input{}  -- fuegt den Inhalt direkt ein, kein Seitenumbruch
+%   \include{} -- immer auf neuer Seite, erlaubt \includeonly
+% Wir nutzen \input, da wir keine partielle Kompilierung brauchen.
+
+\input{src/chapter1_allgemein}
+\input{src/chapter2_aleavue}
+\input{src/chapter3_sattumapic}
+\input{src/chapter4_madoludus}
+\input{src/chapter5_workers}
+\input{src/chapter6_zusammenfassung}
+
+% ============================================================
+%  Anhang
+% ============================================================
+\appendix
+
+\chapter{Tastaturkuerzel-Referenz}
+
+\begin{longtable}{p{4.5cm}p{3cm}p{6cm}}
+\toprule
+\textbf{Taste} & \textbf{Kontext} & \textbf{Aktion} \\
+\midrule
+\endfirsthead
+\midrule
+\endfirsthead
+\midrule
+\endhead
+Ctrl+Alt+F8    & Global        & Secret Mode ein/aus \\
+Enter          & DirBar        & Verzeichnis uebernehmen \\
+\midrule
+Pfeil rechts   & AleaVue       & Naechstes Bild (zufaellig) \\
+Pfeil links    & AleaVue       & Zurueck (Verlauf) \\
+Leertaste      & AleaVue       & Timer pause/resume \\
+S              & AleaVue       & Bookmark in shujuko \\
+Esc            & AleaVue       & Diashow schliessen \\
+\midrule
+Space          & MadoLudus     & Play / Pause \\
+Pfeil rechts   & MadoLudus     & Naechste Datei \\
+Pfeil links    & MadoLudus     & Vorherige Datei (Verlauf) \\
+Shift+Rechts   & MadoLudus (Video) & +5 Sekunden (native) \\
+Shift+Links    & MadoLudus (Video) & -5 Sekunden (native) \\
+M              & MadoLudus     & Stummschalten \\
+F              & MadoLudus     & FF-Modus (Secret Mode zum Deaktiv.) \\
+R              & MadoLudus     & Zufalls-/Sequenz-Reihenfolge \\
+Esc            & MadoLudus     & Fenster schliessen \\
+\midrule
+{--}           & SattumaPic    & Nur Maus / Buttons \\
+\bottomrule
+\end{longtable}
+
+\chapter{Dateistruktur zur Laufzeit}
+
+\begin{lstlisting}[language={}, numbers=none,
+  caption={Laufzeitverzeichnis neben der .exe}]
+TilVista.exe
+optegnelser/
+  kaivo/
+    tilvista_dirs.json          <- kaivo-Datenbank (DB1)
+    <entryname>_img.dshow       <- Bildpfade (zeilenweise)
+    <entryname>_all.catalogue   <- alle Pfade (zeilenweise)
+    <entryname>_shujuko.json    <- Lesezeichen (DB2)
+  loadingerrors.log             <- optional (AleaVue)
+tilvista_config.json            <- Einstellungen
+\end{lstlisting}
+
+% -- Index ---------------------------------------------------
+\printindex
+
+\end{document}

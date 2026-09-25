@@ -1,0 +1,637 @@
+% ============================================================
+%  Kapitel 4: MadoLudus -- In-Window-Slideshow (v0.5.42)
+% ============================================================
+\chapter{Tab 3 -- MadoLudus: Konfiguration und Wiedergabefenster}
+
+% ============================================================
+\section{Funktionsweise}
+% ============================================================
+
+MadoLudus ist eine Diashow, die in einem \emph{eigenen,
+rahmenlosen Fenster} (\klasse{MadoludusWindow}) laeuft.
+Der Tab selbst ist nur die Konfigurationsoberflaeche -- das
+Fenster oeffnet sich auf Knopfdruck.
+
+\begin{neuin}[title={v0.5.42: Kompletter Refactor}]
+Der fruehre \klasse{MadolodosTab} war ein Monolith:
+Konfiguration und Wiedergabe in einer Klasse.
+Ab v0.5.42 sind zwei Klassen getrennt:
+\begin{itemize}[noitemsep]
+  \item \klasse{MadoludusTab} -- Konfigurations-UI
+    im Hauptfenster (bleibt immer sichtbar)
+  \item \klasse{MadoludusWindow} -- Eigenstaendiges
+    \klasse{QMainWindow}, rahmenlos, immer im Vordergrund,
+    per Maus verschiebbar
+\end{itemize}
+Neu ebenfalls: Shuffle-Button (\textbf{R}-Taste) und
+FF-Rate-Auswahl (1/sec, 1/2 sec, 1/N Frames) als Combobox.
+\end{neuin}
+
+\textbf{Betriebsmodi fuer Videos:}
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Modus} & \textbf{Bedingung} & \textbf{Mechanismus} \\
+\midrule
+Native Wiedergabe & FF-Mode aus, Multimedia vorhanden &
+  \klasse{QMediaPlayer} + \klasse{QVideoWidget} \\
+FF/Flip-Book & FF-Mode an (Standard) &
+  ffmpeg-Frames via \klasse{VideoFramesWorker} \\
+Fallback & kein Multimedia (\makro{TV\_NO\_MULTIMEDIA}) &
+  immer ffmpeg-Frames \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Tastaturkuerzel in MadoludusWindow:}
+\begin{center}
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Taste} & \textbf{Aktion} \\
+\midrule
+Space         & Play / Pause \\
+Pfeil rechts  & Naechste Datei \\
+Pfeil links   & Vorherige Datei (Verlauf-bewusst) \\
+Shift+Rechts  & Video: +5 Sekunden (nur native) \\
+Shift+Links   & Video: --5 Sekunden (nur native) \\
+M             & Stummschaltung umschalten \\
+F             & FF-Modus (Secret Mode zum Deaktivieren) \\
+R             & Zufaellige / sequenzielle Reihenfolge \\
+Esc           & Fenster schliessen \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ============================================================
+\section{File by File}
+% ============================================================
+
+\subsection{madoluduswindow.h -- MadoludusConfig-Struct}
+
+\begin{lstlisting}[style=header,
+  caption={madoluduswindow.h -- MadoludusConfig und Klassendeklaration}]
+// Konfiguration, die MadoludusTab an MadoludusWindow uebergibt
+struct MadoludusConfig {
+    bool   showImages   = true;
+    bool   showVideos   = true;
+    bool   ffMode       = true;
+    // Wert fuer Frame-Extraktion: Sekunden oder Anzahl
+    double ffValue      = 10.0;
+    // false = IntervalSeconds, true = FixedCount
+    bool   ffFixedCount = false;
+    bool   muted        = false;
+    bool   randomMode   = false;
+    bool   secretMode   = false;
+};
+
+class MadoludusWindow : public QMainWindow
+{
+    Q_OBJECT
+public:
+    explicit MadoludusWindow(
+        const QStringList&    mediaFiles,
+        const MadoludusConfig& cfg,
+        QWidget*              parent = nullptr);
+    ~MadoludusWindow() override;
+
+signals:
+    void windowClosed();
+    void currentFileChanged(const QString& path);
+
+protected:
+    void keyPressEvent(QKeyEvent*  event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent*  event) override;
+    void closeEvent(QCloseEvent*   event) override;
+
+private slots:
+    void onNextFile();
+    void onPrevFile();
+    void onPlayPause();
+    void onMuteToggle();
+    void onFFToggle();
+    void onShuffleToggle();    // v0.5.42
+    void onAutoAdvance();
+    void onVideoEnded();
+    void onFFFramesReady(bool ok, QStringList framePaths);
+    void cycleFFFrame();
+
+private:
+    void buildUi();
+    void loadFile(int index);
+    void loadImage(const QString& path);
+    void loadVideo(const QString& path);
+    int  nextIndex() const;
+    void startAutoAdvance();
+    void stopAutoAdvance();
+    void startFFExtraction(const QString& path);
+    void stopFFExtraction();
+    void updateButtonStates();
+    void scaleCurrentImage();
+
+    QStringList     m_mediaFiles;
+    MadoludusConfig m_cfg;
+    int             m_index        = -1;
+    bool            m_paused       = false;
+    bool            m_isVideo      = false;
+    bool            m_usingFlipbook = false;
+
+    // Navigations-Verlauf (Previous funktioniert auch im Zufallsmodus)
+    QList<int> m_order;
+    int        m_orderPos = -1;
+
+    QWidget*     m_central   = nullptr;
+    QLabel*      m_display   = nullptr;  // Bild / Flip-Book
+    QLabel*      m_lblPath   = nullptr;  // Pfad unten
+    MadoOverlay* m_overlay   = nullptr;  // linke Steuerleiste
+
+    QTimer* m_advTimer     = nullptr;   // Auto-Advance
+    QTimer* m_ffCycleTimer = nullptr;   // Frame-Wechsel
+
+    QThread*    m_ffThread   = nullptr;
+    QStringList m_ffFrames;
+    int         m_ffFrameIdx = 0;
+    QString     m_ffTmpDir;
+
+#ifndef TV_NO_MULTIMEDIA
+    QWidget*      m_videoContainer = nullptr;
+    QMediaPlayer* m_player         = nullptr;
+    QAudioOutput* m_audio          = nullptr;
+    QVideoWidget* m_videoW         = nullptr;
+#endif
+
+    // Drag-to-move (rahmenlos)
+    QPoint m_dragStart;
+    bool   m_dragging = false;
+
+    static constexpr int kImageDelay   = 5000; // ms
+    static constexpr int kImageDelayFF = 2000;
+    static constexpr int kFFCycleMs    = 600;
+    static constexpr int kSeekStep     = 5000;
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: Struct mit Default-Werten}
+
+\begin{lstlisting}
+struct MadoludusConfig {
+    bool   ffMode  = true;
+    double ffValue = 10.0;
+    // ...
+};
+\end{lstlisting}
+
+Ein \verb|struct| in C++ ist wie eine \verb|class|, aber
+mit Standard-Sichtbarkeit \verb|public|. Die Member
+werden direkt initialisiert (C++11). Das bedeutet:
+\begin{lstlisting}
+MadoludusConfig cfg;   // alle Member auf Default-Werte
+cfg.muted = true;      // einzelne anpassen
+\end{lstlisting}
+Dieses Muster heisst \emph{Aggregate Initialization} --
+kein Konstruktor noetig, solange kein
+Verhalten gekapselt werden muss.
+
+\subsubsection{C++-Analyse: Navigations-Verlauf}
+
+\begin{lstlisting}[caption={nextIndex und Verlaufslogik}]
+int MadoludusWindow::nextIndex() const {
+    if (m_mediaFiles.size() <= 1)
+        return qMax(0, m_index);
+    if (!m_cfg.randomMode)
+        return (m_index + 1) % m_mediaFiles.size();
+
+    // Zufaelligen Index waehlen (nicht den aktuellen)
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<int>
+        dist(0, m_mediaFiles.size() - 1);
+    int n;
+    do { n = dist(rng); } while (n == m_index);
+    return n;
+}
+
+void MadoludusWindow::onNextFile() {
+    if (m_mediaFiles.isEmpty()) return;
+    int next;
+    if (m_orderPos < m_order.size() - 1) {
+        // Verlauf vorwaerts (Nutzer hatte zurueck
+        // navigiert und geht nun wieder vor)
+        ++m_orderPos;
+        next = m_order.at(m_orderPos);
+    } else {
+        // Neuen Index berechnen und in Verlauf aufnehmen
+        next = nextIndex();
+        m_order.append(next);
+        m_orderPos = m_order.size() - 1;
+    }
+    loadFile(next);
+}
+\end{lstlisting}
+
+Das Verlaufsystem mit \member{m\_order} (Liste der
+angezeigten Indizes) und \member{m\_orderPos} (Position
+darin) erlaubt beliebiges Vor- und Rueckwaertsnavigieren
+-- auch im Zufallsmodus wiederholt man exakt die vorher
+gezeigten Dateien.
+
+\subsubsection{Qt-Analyse: Rahmenloses Fenster und Drag-to-Move}
+
+\begin{lstlisting}[caption={Konstruktor: Fenster-Flags}]
+setWindowFlags(Qt::Window
+             | Qt::FramelessWindowHint
+             | Qt::WindowStaysOnTopHint);
+setAttribute(Qt::WA_DeleteOnClose);
+setStyleSheet("background: black;");
+\end{lstlisting}
+
+\begin{itemize}[noitemsep]
+  \item \verb|FramelessWindowHint| -- kein Titelbalken,
+    kein OS-Rahmen; Fenster muss manuell bewegbar gemacht
+    werden
+  \item \verb|WindowStaysOnTopHint| -- immer im Vordergrund
+    (auch vor anderen Anwendungen)
+  \item \verb|WA_DeleteOnClose| -- das Objekt wird beim
+    Schliessen automatisch geloescht (kein Speicherleck)
+\end{itemize}
+
+Drag-to-Move-Implementierung:
+\begin{lstlisting}[caption={Mouse-Events fuer Drag-to-Move}]
+void MadoludusWindow::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton &&
+        // Nicht dragging wenn im Overlay-Bereich
+        !m_overlay->geometry().contains(event->pos()))
+    {
+        m_dragging  = true;
+        m_dragStart = event->globalPosition().toPoint()
+                      - frameGeometry().topLeft();
+    }
+    QMainWindow::mousePressEvent(event);
+}
+
+void MadoludusWindow::mouseMoveEvent(QMouseEvent* event) {
+    if (m_dragging && (event->buttons() & Qt::LeftButton))
+        move(event->globalPosition().toPoint() - m_dragStart);
+    QMainWindow::mouseMoveEvent(event);
+}
+\end{lstlisting}
+
+\verb|globalPosition()| liefert die absolute Bildschirmposition
+der Maus (Qt6: gibt \verb|QPointF| zurueck, daher
+\verb|.toPoint()|). Der Offset \member{m\_dragStart}
+ist die Differenz zwischen Mausposition und Fenster-Ecke --
+so bewegt sich das Fenster nicht sprunghaft.
+
+\subsubsection{Qt-Analyse: FF-Flip-Book-Pipeline}
+
+\begin{lstlisting}[caption={startFFExtraction: VideoFramesWorker starten}]
+void MadoludusWindow::startFFExtraction(const QString& path)
+{
+    stopFFExtraction();
+
+    const VideoFramesWorker::Mode mode =
+        m_cfg.ffFixedCount
+        ? VideoFramesWorker::Mode::FixedCount
+        : VideoFramesWorker::Mode::IntervalSeconds;
+
+    auto* worker = new VideoFramesWorker(
+        path, mode, m_cfg.ffValue);
+    m_ffTmpDir = worker->tmpDir();
+    auto* thread = new QThread;
+    m_ffThread = thread;
+    worker->moveToThread(thread);
+
+    connect(thread, &QThread::started,
+            worker, &VideoFramesWorker::run);
+    connect(worker, &VideoFramesWorker::resultReady,
+            this,   &MadoludusWindow::onFFFramesReady);
+    connect(worker, &VideoFramesWorker::resultReady,
+            thread, &QThread::quit);
+    connect(worker, &VideoFramesWorker::resultReady,
+            worker, &QObject::deleteLater);
+    connect(thread, &QThread::finished,
+            thread, &QObject::deleteLater);
+    thread->start();
+}
+
+void MadoludusWindow::onFFFramesReady(
+    bool ok, QStringList framePaths)
+{
+    m_ffThread = nullptr;
+    if (!ok || framePaths.isEmpty()) {
+        m_display->setText(
+            "(kein Video-Preview -- ffmpeg installieren)");
+        startAutoAdvance();
+        return;
+    }
+    m_ffFrames    = framePaths;
+    m_ffFrameIdx  = 0;
+    cycleFFFrame();
+    if (!m_paused) {
+        m_ffCycleTimer->start(kFFCycleMs);
+        // Auto-Advance nach allen Frames einmal gesehen
+        m_advTimer->start(
+            qMax(kImageDelayFF,
+                 kFFCycleMs * m_ffFrames.size()));
+    }
+}
+\end{lstlisting}
+
+\subsubsection{Qt-Analyse: scaleCurrentImage beim Resize}
+
+\begin{lstlisting}[caption={resizeEvent: Bild neu skalieren}]
+void MadoludusWindow::resizeEvent(QResizeEvent* event) {
+    QMainWindow::resizeEvent(event);
+    scaleCurrentImage();
+}
+
+void MadoludusWindow::scaleCurrentImage() {
+    if (!m_display->isVisible() ||
+        m_display->pixmap().isNull()) return;
+
+    if (m_usingFlipbook && !m_ffFrames.isEmpty()) {
+        // Letzten angezeigten Frame neu skalieren
+        const int shown =
+            (m_ffFrameIdx + m_ffFrames.size() - 1)
+            % m_ffFrames.size();
+        const QPixmap pm(m_ffFrames.at(shown));
+        if (!pm.isNull())
+            m_display->setPixmap(pm.scaled(
+                m_display->size(),
+                Qt::KeepAspectRatio,
+                Qt::SmoothTransformation));
+    } else if (!m_isVideo && m_index >= 0) {
+        // Statisches Bild neu laden und skalieren
+        QImageReader reader(m_mediaFiles.at(m_index));
+        const QSize win = m_display->size();
+        if (!win.isEmpty()) {
+            reader.setScaledSize(win);
+            const QImage img = reader.read();
+            if (!img.isNull())
+                m_display->setPixmap(
+                    QPixmap::fromImage(img).scaled(
+                        win, Qt::KeepAspectRatio,
+                        Qt::SmoothTransformation));
+        }
+    }
+}
+\end{lstlisting}
+
+% ----------------------------------------------------------
+\subsection{madoludustab.h / madoludustab.cpp}
+% ----------------------------------------------------------
+
+\subsubsection{Klassendeklaration}
+
+\begin{lstlisting}[style=header, caption={madoludustab.h -- Kern}]
+class MadoludusTab : public QWidget {
+    Q_OBJECT
+public:
+    explicit MadoludusTab(
+        std::function<QString()> getGlobalDir,
+        QWidget* parent = nullptr);
+    ~MadoludusTab() override;  // stoppt ggf. Scan-Thread
+
+    void onDirectoryChanged(const QString& path,
+                            const QStringList& allFiles = {});
+    void setSecretMode(bool on);
+
+private slots:
+    void showPreview(const QString& path);
+    void onStartClicked();
+    void onScanDone(bool ok,
+                    QStringList imageFiles,
+                    QStringList allFiles);
+    void onWindowClosed();
+    void openWindow(const QStringList& files);
+
+private:
+    void buildUi();
+    void scanDir(const QString& path);
+    MadoludusConfig buildConfig() const;
+    QStringList filteredFiles() const;
+
+    std::function<QString()> m_getGlobalDir;
+    QStringList m_allFiles;
+    bool        m_secretMode = false;
+
+    QCheckBox*   m_chkImages  = nullptr;
+    QCheckBox*   m_chkVideos  = nullptr;
+    QCheckBox*   m_chkFF      = nullptr;
+    QComboBox*   m_cmbFFRate  = nullptr;  // v0.5.42
+    QCheckBox*   m_chkMuted   = nullptr;
+    QCheckBox*   m_chkRandom  = nullptr;  // v0.5.42
+    QPushButton* m_btnPreview = nullptr;
+    QPushButton* m_btnStart   = nullptr;
+    QLabel*      m_lblStatus  = nullptr;
+    QProgressBar* m_pb        = nullptr;
+
+    VideoPreviewWidget* m_preview = nullptr;
+    QLabel*             m_lblType = nullptr;
+    QThread*        m_scanThread  = nullptr;
+    MadoludusWindow* m_window     = nullptr;
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: buildConfig und FF-Rate-Tabelle}
+
+\begin{lstlisting}[caption={FF-Rate-Tabelle und buildConfig}]
+// Tabelle aller FF-Raten-Optionen:
+struct FFRateEntry {
+    const char* label;
+    bool   fixedCount; // false=Intervall, true=Anzahl
+    double value;
+};
+static const FFRateEntry kFFRates[] = {
+    { "1/sec",       false, 1.0  },
+    { "1/2 sec",     false, 2.0  },
+    { "1/5 sec",     false, 5.0  },
+    { "1/10 sec",    false, 10.0 },
+    { "1/2 frames",  true,  2.0  },
+    { "1/10 frames", true,  10.0 },
+    { "1/30 frames", true,  30.0 },
+    { "1/60 frames", true,  60.0 },
+};
+static constexpr int kFFRateCount =
+    static_cast<int>(sizeof(kFFRates)/sizeof(kFFRates[0]));
+
+// Config aus UI-Zustand bauen:
+MadoludusConfig MadoludusTab::buildConfig() const {
+    MadoludusConfig cfg;
+    cfg.showImages  = m_chkImages->isChecked();
+    cfg.showVideos  = m_chkVideos->isChecked();
+    cfg.ffMode      = m_chkFF->isChecked();
+    cfg.muted       = m_chkMuted->isChecked();
+    cfg.randomMode  = m_chkRandom->isChecked();
+
+    const int idx = m_cmbFFRate->currentIndex();
+    if (idx >= 0 && idx < kFFRateCount) {
+        cfg.ffFixedCount = kFFRates[idx].fixedCount;
+        cfg.ffValue      = kFFRates[idx].value;
+    } else {
+        cfg.ffFixedCount = false;
+        cfg.ffValue      = 10.0;
+    }
+    return cfg;
+}
+\end{lstlisting}
+
+\verb|sizeof(kFFRates)/sizeof(kFFRates[0])| berechnet
+die Arraylaenge zur Compile-Zeit ohne hartcodierten Wert --
+bei jedem neuen Eintrag in der Tabelle stimmt der Count
+automatisch.
+
+\subsubsection{Qt-Analyse: openWindow und Signal-Rueckkanal}
+
+\begin{lstlisting}[caption={openWindow: Fenster starten und verbinden}]
+void MadoludusTab::openWindow(const QStringList& files) {
+    MadoludusConfig cfg = buildConfig();
+    cfg.secretMode = m_secretMode;
+    m_window = new MadoludusWindow(files, cfg);
+
+    // Startgroesse: halber Bildschirm, linke obere Ecke
+    const QRect scr =
+        QGuiApplication::primaryScreen()
+        ->availableGeometry();
+    m_window->setGeometry(
+        0, 0, scr.width()/2, scr.height()/2);
+
+    // Rueckkanal: Fenster meldet geschlossen
+    connect(m_window, &MadoludusWindow::windowClosed,
+            this,     &MadoludusTab::onWindowClosed);
+
+    // Rueckkanal: Datei geaendert -> Preview aktualisieren
+    connect(m_window,
+            &MadoludusWindow::currentFileChanged,
+            this,
+            [this](const QString& path) {
+                showPreview(path);
+            });
+
+    m_window->show();
+    m_lblStatus->setText(
+        QString("MadoLudus running -- %1 file(s).")
+        .arg(files.size()));
+}
+
+void MadoludusTab::onWindowClosed() {
+    m_window = nullptr;  // Zeiger freigeben (WA_DeleteOnClose)
+    m_lblStatus->setText("MadoLudus closed.");
+}
+\end{lstlisting}
+
+\verb|WA_DeleteOnClose| (gesetzt im \klasse{MadoludusWindow}-Konstruktor)
+loescht das Objekt beim Schliessen automatisch.
+Der Zeiger \member{m\_window} wird im \slot{onWindowClosed}-Slot
+auf \verb|nullptr| gesetzt -- sonst haette man einen
+Dangling Pointer.
+
+% ----------------------------------------------------------
+\subsection{madooverlay.h / madooverlay.cpp}
+% ----------------------------------------------------------
+
+\klasse{MadoOverlay} ist die halbtransparente Steuerleiste
+im \klasse{MadoludusWindow}. Sie ist ein eigenstaendiges
+\klasse{QWidget}, das als Kind im Fenster positioniert wird.
+
+\begin{lstlisting}[style=header, caption={madooverlay.h}]
+class MadoOverlay : public QWidget {
+    Q_OBJECT
+public:
+    explicit MadoOverlay(QWidget* parent = nullptr);
+
+    void setPaused(bool paused);   // Play/Pause-Icon
+    void setMuted(bool muted);     // Lautsprecher-Icon
+    void setFFMode(bool ff);       // FF-Button-Farbe
+    void setRandomMode(bool on);   // v0.5.42: Shuffle-Icon
+    void setFileInfo(int index, int total,
+                     const QString& name);
+    void setSecretMode(bool on);
+
+signals:
+    void playPauseClicked();
+    void prevClicked();
+    void nextClicked();
+    void muteClicked();
+    void ffClicked();
+    void shuffleClicked();         // v0.5.42
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+
+private:
+    QPushButton* m_btnPrev    = nullptr;
+    QPushButton* m_btnPlay    = nullptr;
+    QPushButton* m_btnNext    = nullptr;
+    QPushButton* m_btnMute    = nullptr;
+    QPushButton* m_btnFF      = nullptr;
+    QPushButton* m_btnShuffle = nullptr;  // v0.5.42
+    QLabel*      m_lblInfo    = nullptr;
+};
+\end{lstlisting}
+
+\subsubsection{Qt-Analyse: Custom paintEvent}
+
+\begin{lstlisting}[caption={MadoOverlay::paintEvent -- dunkle abgerundete Pille}]
+void MadoOverlay::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    // Schwarz mit 63% Deckkraft (Alpha 160/255)
+    p.setBrush(QColor(0, 0, 0, 160));
+    p.setPen(Qt::NoPen);
+    p.drawRoundedRect(
+        rect().adjusted(4, 4, -4, -4), 10, 10);
+}
+\end{lstlisting}
+
+\verb|QColor(r, g, b, alpha)| -- der vierte Parameter
+ist der Alpha-Kanal (0 = voellig transparent,
+255 = voellig opak). \verb|drawRoundedRect| mit Radius 10
+erzeugt die "Pille"-Form. \verb|Qt::NoPen| verhindert
+einen Rahmen.
+
+\begin{hinweis}
+\textbf{Wann paintEvent ueberschreiben?}
+Normalerweise reicht es, ein \klasse{QWidget} per
+\verb|setStyleSheet()| zu stylen.
+\verb|paintEvent| ueberschreibt man nur, wenn man
+volle Kontrolle ueber das Zeichnen braucht -- hier
+fuer die halbtransparente Pille, die kein
+Stylesheet erreichen kann.
+\end{hinweis}
+
+\subsubsection{Qt-Analyse: Unicode-Icons in Buttons}
+
+\begin{lstlisting}[caption={makeBtn: Emoji-Symbole als Button-Texte}]
+static QPushButton* makeBtn(const QString& text,
+                             QWidget* parent) {
+    auto* b = new QPushButton(text, parent);
+    b->setFixedSize(40, 40);
+    b->setFlat(true);
+    b->setStyleSheet(
+        "QPushButton {"
+        "  font-size: 18px;"
+        "  color: white;"
+        "  background: transparent;"
+        "  border: none;"
+        "  border-radius: 6px;"
+        "}"
+        "QPushButton:hover {"
+        "  background: rgba(255,255,255,40);"
+        "}");
+    return b;
+}
+// Aufruf:
+m_btnPlay    = makeBtn("\u23f8", this);  // Pause-Symbol
+m_btnMute    = makeBtn("\U0001f507", this); // Stummschalten
+m_btnShuffle = makeBtn("\U0001f500", this); // Shuffle
+\end{lstlisting}
+
+Qt stellt Unicode-Zeichen als String-Literale dar.
+\verb|\uXXXX| (4 Hex-Ziffern) fuer BMP-Zeichen,
+\verb|\UXXXXXXXX| (8 Hex-Ziffern) fuer Zeichen
+ausserhalb der BMP (Supplementary Planes, z.B. Emojis).
+Die Schriftart muss die Zeichen unterstuetzen --
+auf Windows liefert "Segoe UI Emoji" alle gaengigen Emojis.

@@ -1,0 +1,166 @@
+% ============================================================
+%  packages.tex  --  alle eingebundenen LaTeX-Pakete
+%
+%  WARUM KEIN \usepackage{babel} MIT NGERMAN?
+%  ------------------------------------------
+%  Babel ist das Standard-Lokalisierungspaket fuer LaTeX und
+%  liefert u.a. deutsche Trennmuster, Anpassung von
+%  Kapitelbeschriftungen ("Kapitel" statt "Chapter") und
+%  korrekte Silbentrennung.
+%
+%  Auf diesem System (TeX Live 2023/Debian) fehlt das Paket
+%  "babel-german" (normalerweise als separates CTAN-Paket
+%  installiert). Ohne es kennt babel die Option "ngerman"
+%  nicht und bricht den Build ab.
+%
+%  Alternativen und warum sie hier nicht greifen:
+%   - \usepackage{ngermanb}   --> erwartet ngermanb.ldf, fehlt
+%   - \usepackage[german]{babel} --> braucht german.ldf, fehlt
+%   - polyglossia  --> nur fuer XeLaTeX/LuaLaTeX, wir nutzen pdfLaTeX
+%
+%  Was wir stattdessen tun:
+%   - inputenc + fontenc:  korrekte UTF-8-Eingabe und T1-Ausgabe
+%     (Umlaute in Fliesstextbloecken funktionieren damit einwandfrei)
+%   - csquotes:  deutsche Anführungszeichen per \enquote{}
+%   - Listings: extendedchars=false (verhindert UTF-8-Fehler
+%     INNERHALB von lstlisting-Umgebungen; Kommentare dort
+%     deshalb in ASCII-Umschreibung)
+%   - Silbentrennung laeuft ohne babel auf Englisch; das ist
+%     bei einem technischen Dokument mit vielen Code-Bezeichnern
+%     kaum sichtbar.
+%
+%  Sobald babel-german auf dem System verfuegbar ist, reicht
+%  es, die beiden auskommentierten Zeilen unten zu aktivieren
+%  und die "\usepackage{csquotes}"-Zeile zu behalten.
+%
+%  Zum Aktivieren (wenn babel-german installiert):
+%    \usepackage[ngerman]{babel}
+%    \usepackage{csquotes}   % arbeitet dann mit babel zusammen
+% ============================================================
+
+% -- Zeichenkodierung ----------------------------------------
+% inputenc: Eingabedatei wird als UTF-8 gelesen.
+%   Ohne dieses Paket muss jeder Umlaut als Escape-Sequenz
+%   geschrieben werden (\"a statt ae, etc.).
+\usepackage[utf8]{inputenc}
+
+% fontenc: Ausgabe-Zeichensatz T1 (8-bit).
+%   T1 enthaelt alle westeuropaeischen Zeichen als echte
+%   Glyphen -- Silbentrennung an Umlauten funktioniert damit
+%   korrekt. Ohne T1 wuerde z.B. "Oe" als zwei Zeichen
+%   behandelt und nicht sauber getrennt.
+\usepackage[T1]{fontenc}
+
+% csquotes: typografisch korrekte Anführungszeichen.
+%   \enquote{Text} erzeugt "Text" (je nach Locale).
+%   Ohne babel-Kopplung nutzen wir den Stil manuell:
+%   \MakeOuterQuote{"} wäre eine Alternative, aber
+%   \enquote ist sicherer und semantisch klarer.
+\usepackage{csquotes}
+
+% -- Schriften -----------------------------------------------
+% palatino: Serifenschrift (Fliesstext).
+%   Besser lesbar als Computer Modern auf Bildschirm und
+%   Ausdruck; wird von Qt-Dokumentationen aehnlich verwendet.
+\usepackage{palatino}
+
+% courier: Monospace-Schrift fuer Code-Listings.
+%   Ist auf praktisch jedem TeX-System vorhanden und
+%   unterstuetzt den T1-Zeichensatz vollstaendig.
+\usepackage{courier}
+
+% helvet: serifenlose Schrift (Helvetica) fuer Ueberschriften,
+%   skaliert auf 92 % der normalen Groesse (wirkt proportionaler).
+\usepackage[scaled=0.92]{helvet}
+
+% -- Seitenlayout --------------------------------------------
+% geometry: Seitenraender fein einstellen.
+%   inner/outer statt left/right fuer zweiseitigen Druck:
+%   "inner" ist der Bundsteg (nahe am Heftrand), "outer" der
+%   Aussensteg. headheight=15pt verhindert eine fancyhdr-Warnung.
+\usepackage[
+  top=2.8cm, bottom=3.2cm,
+  inner=3.0cm, outer=2.4cm,
+  headheight=15pt
+]{geometry}
+
+% fancyhdr: individuelle Kopf- und Fusszeilen.
+%   Standardmaessig zeigt LaTeX nur Seitennummern;
+%   fancyhdr erlaubt Kapiteltitel + Icon in der Kopfzeile.
+\usepackage{fancyhdr}
+
+% -- Farben --------------------------------------------------
+% xcolor mit dvipsnames: vordefinierte Farbnamen (z.B. BrickRed)
+%   und table-Option fuer gefaerbte Tabellenzeilen.
+\usepackage[dvipsnames,table]{xcolor}
+
+% -- Schriften (Ergaenzung) ----------------------------------
+% microtype: verbessert den Textumbruch durch optischen
+%   Randausgleich und Zeichenabstandsanpassung (nur pdfLaTeX).
+%   Rein typografisch, kein sichtbarer Effekt auf Struktur.
+\usepackage{microtype}
+
+% -- Grafik --------------------------------------------------
+% graphicx: \includegraphics fuer PNG/PDF/JPG.
+%   Benoetigt fuer das Icon in Titelseite und Kopfzeile.
+\usepackage{graphicx}
+
+% -- Code-Listings -------------------------------------------
+% listings: typsetzt Quellcode mit Syntax-Highlighting.
+%   Eigene Stile werden in macros.tex definiert.
+%   Hinweis: extendedchars=false ist in den Stilen gesetzt,
+%   weil listings intern keine echte UTF-8-Unterstuetzung hat
+%   und bei Umlauten in Code-Bloecken sonst abbricht.
+\usepackage{listings}
+
+% -- Boxen (Hinweise, Warnungen, Qt-Hintergrund) -------------
+% tcolorbox mit skins und breakable:
+%   "skins" erlaubt erweiterte Rahmengestaltung,
+%   "breakable" erlaubt Boxen ueber Seitenumbrueche hinweg.
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+
+% -- Tabellen ------------------------------------------------
+% booktabs: professionelle horizontale Linien (\toprule etc.)
+%   ohne vertikale Linien -- entspricht typografischen Regeln.
+\usepackage{booktabs}
+
+% longtable: Tabellen ueber mehrere Seiten.
+%   Benoetigt fuer die Kuerzel- und Klassen-Referenz im Anhang.
+\usepackage{longtable}
+
+% array: erweiterte Spalten-Definitionen in Tabellen
+%   (z.B. feste Spaltenbreite mit p{3cm}).
+\usepackage{array}
+
+% -- Listen --------------------------------------------------
+% enumitem: feinere Kontrolle ueber Listenabstaende.
+%   noitemsep reduziert den Abstand zwischen Listenpunkten
+%   fuer kompaktere Darstellung.
+\usepackage{enumitem}
+
+% -- Absatzgestaltung ----------------------------------------
+% parskip: ersetzt Einrueckung durch halben Absatzabstand.
+%   Passt besser zu einem technischen Dokument als klassische
+%   Einrueckung; kombiniert mit scrreprt's parskip=half.
+\usepackage{parskip}
+
+% -- Index ---------------------------------------------------
+% makeidx: erzeugt einen Stichwortindex am Dokumentende.
+%   \index{Begriff} im Text, \printindex am Ende.
+\usepackage{makeidx}
+\makeindex
+
+% -- Hyperlinks und PDF-Metadaten ----------------------------
+% hyperref: macht Querverweise, TOC-Eintraege und URLs
+\usepackage[
+  colorlinks = true,
+  linkcolor  = tvpurple2,%linkblue,
+  urlcolor   = tvpurple2,%linkblue,
+  citecolor  = gray,
+  pdftitle   = {TilVista Entwicklerdokumentation},
+  pdfauthor  = {Ludwig Armin}
+]{hyperref}
+
+% HINWEIS: Diese Datei wird per \input{} eingebunden,
+% nicht als eigenstaendiges Dokument kompiliert.

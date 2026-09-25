@@ -1,0 +1,670 @@
+% ============================================================
+%  Kapitel 2: AleaVue -- Zufaellige Bildschirmpraesentation
+% ============================================================
+\chapter{Tab 1 -- AleaVue: Zufaellige Diashow}
+
+% ============================================================
+\section{Funktionsweise}
+% ============================================================
+
+AleaVue ist ein Vollbild-Zufalls-Diashow-Werkzeug.
+Der Nutzer waehlt ein Verzeichnis, startet die Praesentation,
+und TilVista zeigt alle enthaltenen Bilder in zufaelliger
+Reihenfolge -- alle 4,5 Sekunden automatisch wechselnd.
+
+\textbf{Ablauf Schritt fuer Schritt:}
+\begin{enumerate}
+  \item Nutzer setzt Verzeichnis in \klasse{DirBar}
+        (Browse-Dialog oder Enter in der Pfad-Zeile)
+  \item Klick auf \emph{Load from Directory} startet
+        \klasse{ScanWorker} im Hintergrund-Thread --
+        der GUI-Thread bleibt reaktiv
+  \item Nach dem Scan stehen Bildpfade in
+        \member{m\_imagePaths}, alle Pfade in
+        \member{m\_allFiles}
+  \item Alternativ: Doppelklick auf einen kaivo-Eintrag
+        laedt gecachte Listen aus \datei{.dshow}/\datei{.catalogue}
+        -- kein erneuter Scan noetig
+  \item Klick auf \emph{Start AleaVue} oeffnet
+        \klasse{SlideshowWindow} (Vollbild oder Fenster)
+\end{enumerate}
+
+\textbf{Tastaturkuerzel im Fenster:}
+\begin{center}
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Taste} & \textbf{Aktion} \\
+\midrule
+Pfeil rechts & Naechstes Bild (zufaellig) \\
+Pfeil links  & Zurueck in der Anzeigehistorie \\
+Leertaste    & Timer anhalten / fortsetzen \\
+\textbf{S}   & Aktuelles Bild in shujuko (DB2) speichern \\
+Esc          & Diashow schliessen, Sleep-Prevention zuruecksetzen \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ============================================================
+\section{File by File}
+% ============================================================
+
+\subsection{aleavuetab.h}
+
+\begin{lstlisting}[style=header, caption={aleavuetab.h}]
+#pragma once
+#include <QStringList>
+#include <QWidget>
+#include <functional>
+
+class QCheckBox;
+class QLabel;
+class QProgressBar;
+class QPushButton;
+class QThread;
+class DirDatabasePanel;
+class ShujukoPanel;
+class SlideshowWindow;
+
+class AleaVueTab : public QWidget
+{
+    Q_OBJECT
+public:
+    // std::function statt direkter MainWindow-Abhaengigkeit
+    explicit AleaVueTab(std::function<QString()> getGlobalDir,
+                        ShujukoPanel*            shujuko,
+                        QWidget* parent = nullptr);
+
+    void onDirectoryChanged(const QString& path);
+    void loadFromDirectory();
+
+    // Zugriff auf kaivo-Panel (fuer MainWindow-Signalverdrahtung)
+    DirDatabasePanel* dbPanel() const { return m_dbPanel; }
+
+signals:
+    // Anfrage an MainWindow, DirBar auf diesen Pfad zu setzen
+    void requestDirChange(const QString& path);
+
+private slots:
+    void onDbDirLoaded(const QString& path,
+                       const QStringList& imageFiles,
+                       const QStringList& allFiles);
+    void onScanDone(bool ok,
+                    QStringList imageFiles,
+                    QStringList allFiles);
+    void onScanThenOpen(bool ok,
+                        QStringList imageFiles,
+                        QStringList allFiles);
+    void onStartSlideshow();
+
+private:
+    void buildUi();
+    void scanDir(const QString& path);
+    void openWindow(const QString& dir,
+                    const QStringList& imagePaths);
+
+    std::function<QString()> m_getGlobalDir;
+    ShujukoPanel*            m_shujuko;  // shared, not owned
+
+    QStringList m_imagePaths;
+    QStringList m_allFiles;
+    QString     m_lastScannedPath;
+
+    QLabel*           m_lblStatus       = nullptr;
+    QProgressBar*     m_pb              = nullptr;
+    QPushButton*      m_btnStart        = nullptr;
+    QCheckBox*        m_chkFullscreen   = nullptr;
+    DirDatabasePanel* m_dbPanel         = nullptr;
+    SlideshowWindow*  m_slideshowWindow = nullptr;
+    QThread*          m_scanThread      = nullptr;
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse}
+
+\paragraph{std::function als Dependency Inversion}
+\verb|std::function<QString()>| ist ein Funktionsobjekt,
+das jeden aufrufbaren Typ aufnehmen kann -- Lambda, Funktor,
+freie Funktion. \klasse{AleaVueTab} braucht
+\klasse{MainWindow} nicht zu kennen.
+Das entspricht dem \emph{Dependency Inversion Principle}:
+Abhaengigkeit von einer Abstraktion (Funktion), nicht von
+einer konkreten Klasse.
+
+\paragraph{ShujukoPanel* -- shared, not owned}
+Der Kommentar ist semantisch wichtig.
+\klasse{AleaVueTab} darf den Pointer \emph{nicht} deleten.
+In modernem C++ wuerde man \verb|std::shared_ptr|
+oder \verb|std::observer_ptr| verwenden; hier genuegt der
+Rohzeiger, weil \klasse{MainWindow} als einziger
+Eigentuemer klar definiert ist und laenger lebt als
+\klasse{AleaVueTab}.
+
+\paragraph{Zwei Scan-Slots}
+\klasse{AleaVueTab} hat zwei verschiedene Slots fuer
+Scan-Ergebnisse:
+\begin{itemize}[noitemsep]
+  \item \slot{onScanDone} -- Scan abgeschlossen, Dateiliste
+    speichern, kein Fenster oeffnen (Hintergrund-Scan
+    nach Verzeichniswechsel)
+  \item \slot{onScanThenOpen} -- Scan abgeschlossen
+    \emph{und} sofort Slideshow oeffnen (Nutzer hatte auf
+    Start geklickt, bevor der Scan fertig war)
+\end{itemize}
+
+\subsubsection{Qt-Analyse}
+
+\paragraph{DirDatabasePanel* dbPanel() const}
+Getter mit \verb|const|-Qualifikation: Die Methode
+veraendert kein Mitglied. \klasse{MainWindow} ruft ihn
+ab, um Signal-Verbindungen zum DB-Panel herzustellen,
+ohne dass \klasse{AleaVueTab} diese Verdrahtung selbst
+kennen muss.
+
+\paragraph{QProgressBar als Scan-Feedback}
+\member{m\_pb} wird bei Scan-Start mit
+\verb|setRange(0,100)|, \verb|setValue(0)| und
+\verb|setVisible(true)| aktiviert. Fortschritt
+kommt vom Signal \signal{progressChanged(int)} von
+\klasse{ScanWorker} direkt per \verb|connect| an
+\verb|m_pb->setValue| -- kein Code in \klasse{AleaVueTab}
+noetig.
+
+% ----------------------------------------------------------
+\subsection{aleavuetab.cpp}
+% ----------------------------------------------------------
+
+\subsubsection{scanDir -- Worker-Thread starten}
+
+\begin{lstlisting}[caption={scanDir: das Worker-Thread-Grundmuster in TilVista}]
+void AleaVueTab::scanDir(const QString& path) {
+    pbStart(m_pb);                 // Progressbar anzeigen
+    m_btnStart->setEnabled(false); // Button sperren
+    m_lastScannedPath = path;
+
+    // Alten Thread entkoppeln (falls noch laufend)
+    safeStop(m_scanThread, this);
+
+    auto* worker = new ScanWorker(path);
+    auto* thread = new QThread;
+    m_scanThread = thread;
+
+    // Worker in den neuen Thread verschieben
+    worker->moveToThread(thread);
+
+    // Verbindungen aufbauen
+    connect(thread, &QThread::started,
+            worker, &ScanWorker::run);
+    connect(worker, &ScanWorker::progressChanged,
+            m_pb,   &QProgressBar::setValue);
+    connect(worker, &ScanWorker::resultReady,
+            this,   &AleaVueTab::onScanDone);
+
+    // Self-cleanup: Worker und Thread loeschen sich selbst
+    connect(worker, &ScanWorker::resultReady,
+            thread, &QThread::quit);
+    connect(worker, &ScanWorker::resultReady,
+            worker, &QObject::deleteLater);
+    connect(thread, &QThread::finished,
+            thread, &QObject::deleteLater);
+
+    thread->start();
+}
+\end{lstlisting}
+
+\begin{qtinfo}[title={Qt-Hintergrund: Worker-Object-Muster}]
+Das \emph{Worker-Object-Muster} ist das Qt-empfohlene
+Muster fuer Hintergrundarbeit ohne GUI-Blockade:
+\begin{enumerate}[noitemsep]
+  \item \klasse{QObject}-Subklasse (\klasse{ScanWorker})
+    kapselt die Arbeit in \methode{run}
+  \item \verb|moveToThread()| verschiebt den Worker
+    in den Thread -- alle Slots laufen dann im Thread
+  \item \signal{QThread::started} loest
+    \slot{ScanWorker::run} aus
+  \item Ergebnisse kommen per Signal im GUI-Thread an
+    (queued connection, automatisch bei Thread-Grenze)
+  \item \verb|deleteLater()| stellt thread-sicheres
+    Aufraumen sicher -- nie \verb|delete| direkt aufrufen
+\end{enumerate}
+Niemals Qt-GUI-Methoden direkt aus einem Worker-Thread
+aufrufen -- nur Signale senden!\\
+Referenz: \url{https://doc.qt.io/qt-6/thread-basics.html}
+\end{qtinfo}
+
+\subsubsection{safeStop -- Schutz vor Stale-Signalen}
+
+\begin{lstlisting}[caption={safeStop: verhindert Signale in ungueltige Slots}]
+static void safeStop(QThread*& t, QObject* receiver) {
+    if (!t) return;
+    // Alle Verbindungen vom Thread zu diesem Objekt trennen
+    t->disconnect(receiver);
+    t = nullptr;
+    // Der Thread laeuft weiter und raumt sich selbst auf,
+    // sendet aber keine Signale mehr an "receiver".
+}
+\end{lstlisting}
+
+Wenn ein neuer Scan gestartet wird, bevor der alte fertig ist,
+koennten spaete Signale des alten Workers den neuen Zustand
+korrumpieren. \verb|disconnect(receiver)| trennt alle
+Signal-Verbindungen vom alten Thread zu \verb|this| --
+ohne den Thread zu stoppen oder darauf zu warten.
+
+\begin{warnung}[title={Achtung: Stale-Signal-Bug}]
+Wuerde man \verb|safeStop| weglassen und einfach einen
+zweiten Thread starten, koennte das so enden:
+\begin{enumerate}[noitemsep]
+  \item Scan 1 laeuft, braucht 3 Sekunden
+  \item Nutzer waehlt neues Verzeichnis, Scan 2 startet
+  \item Scan 2 endet nach 1 Sekunde: \verb|m_imagePaths|
+    enthaelt Verzeichnis 2
+  \item Scan 1 endet spaeter: \verb|m_imagePaths| wird
+    mit Verzeichnis 1 ueberschrieben -- falscher Zustand!
+\end{enumerate}
+\end{warnung}
+
+\subsubsection{openWindow -- SlideshowWindow erzeugen}
+
+\begin{lstlisting}[caption={openWindow: Vollbild- oder Fenstermodus}]
+void AleaVueTab::openWindow(const QString& directory,
+                             const QStringList& imagePaths)
+{
+    const bool fullscreen = m_chkFullscreen->isChecked();
+    m_slideshowWindow = new SlideshowWindow(
+        directory,
+        imagePaths,
+        TV::logDir(),
+        false,          // logErrors
+        fullscreen,     // v0.5.42: Flag an Window weitergeben
+        m_shujuko);
+
+    fullscreen
+        ? m_slideshowWindow->showFullScreen()
+        : m_slideshowWindow->show();
+}
+\end{lstlisting}
+
+\klasse{SlideshowWindow} erhaelt \member{m\_shujuko} als
+Pointer, um beim S-Tastendruck direkt
+\verb|m_shujuko->addBookmark(path)| aufrufen zu koennen.
+
+% ----------------------------------------------------------
+\subsection{slideshowwindow.h / slideshowwindow.cpp}
+% ----------------------------------------------------------
+
+\subsubsection{Klassendeklaration}
+
+\begin{lstlisting}[style=header, caption={slideshowwindow.h -- Kern}]
+class SlideshowWindow : public QMainWindow {
+    Q_OBJECT
+public:
+    SlideshowWindow(const QString&     directory,
+                    const QStringList& imagePaths,
+                    const QString&     logPath,
+                    bool               logErrors,
+                    bool               fullscreen, // v0.5.42
+                    ShujukoPanel*      shujuko,
+                    QWidget*           parent = nullptr);
+signals:
+    void bookmarkAdded(const QString& path);
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+
+private slots:
+    void changeImage();
+
+private:
+    void displayImage(const QString& path);
+    void goBack();
+    void logError(const QString& path,
+                  const QString& error);
+
+    QString     m_directory;
+    QStringList m_imagePaths;
+    QString     m_logPath;
+    bool        m_logErrors;
+    bool        m_fullscreen = false;  // v0.5.42
+    ShujukoPanel* m_shujuko;
+
+    QLabel* m_label = nullptr;  // Anzeige-Widget
+    QTimer* m_timer = nullptr;  // 4500ms Auto-Advance
+
+    QStringList m_imageOrder;   // Anzeigeverlauf
+    int         m_backtrack = 0;// < 0: in Verlauf zurueck
+    QString     m_current;      // aktuell angezeigter Pfad
+
+    int    m_showW = 1920, m_showH = 1080;
+    double m_ratio = 16.0 / 9.0;
+    static constexpr int kIntervalMs = 4500;
+};
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: Vollbild vs. Fenster (v0.5.42)}
+
+\begin{lstlisting}[caption={Konstruktor: Vollbild- vs. Fensterlogik}]
+SlideshowWindow::SlideshowWindow(...)
+{
+    TV::preventSleep();
+
+    const QRect scr =
+        QGuiApplication::primaryScreen()
+        ->availableGeometry();
+
+    if (m_fullscreen) {
+        // Vollbild: Cursor verstecken (kein OS-Chrome)
+        setCursor(Qt::BlankCursor);
+        m_showW = scr.width();
+        m_showH = scr.height();
+    } else {
+        // Fenster: Cursor sichtbar (Titelleiste braucht ihn)
+        // Startet links oben bei halber Bildschirmgroesse
+        m_showW = scr.width()  / 2;
+        m_showH = scr.height() / 2;
+        setGeometry(0, 0, m_showW, m_showH);
+    }
+    m_ratio = double(m_showW) / double(m_showH);
+    // ...
+    connect(this, &SlideshowWindow::bookmarkAdded,
+            m_shujuko, &ShujukoPanel::addBookmark);
+
+    m_timer->start();
+    changeImage();
+}
+\end{lstlisting}
+
+\verb|Qt::BlankCursor| versteckt den Mauszeiger vollstaendig --
+nur im Vollbild sinnvoll, wo kein Fensterrahmen vorhanden ist.
+
+\subsubsection{C++-Analyse: Zufallsreihenfolge und Rueckwaertsnavigation}
+
+\begin{lstlisting}[caption={changeImage: Verlaufslogik mit m\_backtrack}]
+void SlideshowWindow::changeImage() {
+    if (m_imagePaths.isEmpty()) return;
+
+    if (m_backtrack >= -1) {
+        // Vorwaerts: neues zufaelliges Bild
+        m_backtrack = 0;
+        std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<int>
+            d(0, m_imagePaths.size()-1);
+        const QString img = m_imagePaths.at(d(rng));
+        m_imageOrder.append(img);  // in Verlauf speichern
+        displayImage(img);
+    } else {
+        // Rueckwaerts: aus Verlauf wiederholen
+        ++m_backtrack;
+        const int idx =
+            m_imageOrder.size() + m_backtrack;
+        if (idx >= 0 && idx < m_imageOrder.size())
+            displayImage(m_imageOrder.at(idx));
+        else { m_backtrack = 0; changeImage(); }
+    }
+}
+\end{lstlisting}
+
+\member{m\_backtrack} ist ein negativer Offset in
+\member{m\_imageOrder}: 0 = vorderster Eintrag,
+$-1$ = eins zurueck, $-2$ = zwei zurueck usw.
+Die Liste waechst vorwaerts, der Nutzer kann jederzeit
+durch den Verlauf navigieren.
+
+\begin{hinweis}
+\textbf{std::mt19937 + std::random\_device:}
+\verb|std::mt19937| (Mersenne Twister) ist ein
+qualitativ hochwertiger Pseudozufallsgenerator --
+deutlich besser als \verb|rand()|. Er wird mit einem
+nicht-deterministischen Seed aus der Betriebssystem-Entropie
+(\verb|std::random_device{}()|) initialisiert.
+\verb|std::uniform_int_distribution<int>(a,b)| liefert
+gleichverteilte Ganzzahlen in $[a, b]$ inklusive.\\
+Referenz: \url{https://en.cppreference.com/w/cpp/numeric/random}
+\end{hinweis}
+
+\subsubsection{Qt-Analyse: QImageReader mit adaptiver Skalierung}
+
+\begin{lstlisting}[caption={displayImage: effizientes Laden grosser Bilder}]
+void SlideshowWindow::displayImage(const QString& path) {
+    m_current = path;
+    QImageReader reader(path);
+    const QSize orig = reader.size();
+
+    // Skalierung VOR dem Dekodieren setzen
+    if (orig.isValid() &&
+        (orig.width()  > m_showW ||
+         orig.height() > m_showH))
+    {
+        const double s = qMin(
+            double(m_showW) / orig.width(),
+            double(m_showH) / orig.height());
+        reader.setScaledSize(
+            QSize(int(orig.width()  * s),
+                  int(orig.height() * s)));
+    }
+    const QImage img = reader.read();
+    if (img.isNull()) {
+        logError(path, reader.errorString());
+        changeImage();  // fehlerhaftes Bild ueberspringen
+        return;
+    }
+    // Feinabstimmung per Seitenverhaeltnis
+    QPixmap pm = QPixmap::fromImage(img);
+    if (double(pm.width()) / double(pm.height()) > m_ratio)
+        pm = pm.scaledToWidth(m_showW,
+                              Qt::SmoothTransformation);
+    else
+        pm = pm.scaledToHeight(m_showH - 18,
+                               Qt::SmoothTransformation);
+
+    m_label->setPixmap(pm);
+    m_timer->stop();
+    m_timer->start(kIntervalMs); // Timer neu starten
+    TV::preventSleep();
+}
+\end{lstlisting}
+
+\begin{qtinfo}[title={Qt-Hintergrund: QImageReader vs. QPixmap(path)}]
+\verb|QPixmap(path)| laedt das Bild vollstaendig in
+seiner Originalaufloesung in den Speicher, bevor
+skaliert wird. Bei einem 20-Megapixel-JPEG bedeutet
+das: 20 MP $\times$ 4 Byte/Pixel = ca. 80 MB RAM nur
+fuer ein Bild.\\
+\verb|QImageReader::setScaledSize()| hingegen teilt dem
+Dekoder mit, dass er \emph{beim Dekodieren} skalieren
+soll -- JPEG-Dekoder koennen z.B. direkt auf 1/2, 1/4
+oder 1/8 der Originalgroesse dekodieren. Das spart
+erheblich Speicher und Zeit.\\
+Referenz: \url{https://doc.qt.io/qt-6/qimagereader.html}
+\end{qtinfo}
+
+\subsubsection{Qt-Analyse: S-Taste und Bookmark-Signal}
+
+\begin{lstlisting}[caption={keyPressEvent: S-Taste sendet Signal}]
+void SlideshowWindow::keyPressEvent(QKeyEvent* event) {
+    switch (event->key()) {
+    case Qt::Key_Escape:
+        setCursor(Qt::ArrowCursor);
+        TV::restoreSleep();
+        close();
+        break;
+    case Qt::Key_S:
+        // emit traegt den Pfad, ShujukoPanel empfaengt ihn
+        if (!m_current.isEmpty())
+            emit bookmarkAdded(m_current);
+        break;
+    case Qt::Key_Space:
+        m_timer->isActive()
+            ? m_timer->stop()
+            : m_timer->start(kIntervalMs);
+        break;
+    // ...
+    default:
+        QMainWindow::keyPressEvent(event); // Basisklasse!
+    }
+}
+\end{lstlisting}
+
+Im Konstruktor ist verbunden:
+\begin{lstlisting}
+connect(this,     &SlideshowWindow::bookmarkAdded,
+        m_shujuko, &ShujukoPanel::addBookmark);
+\end{lstlisting}
+
+\klasse{SlideshowWindow} weiss nur, dass jemand auf das
+Signal hoert -- die Implementierung von
+\klasse{ShujukoPanel} ist egal. Loses Koppeln durch
+Signale.
+
+% ----------------------------------------------------------
+\subsection{dirdatabasepanel.h / dirdatabasepanel.cpp (kaivo DB1)}
+% ----------------------------------------------------------
+
+\subsubsection{Aufgabe und JSON-Schema}
+
+\klasse{DirDatabasePanel} speichert Verzeichniseintraege
+mit gecachten Dateilisten. Die Datenbankdatei:
+
+\begin{lstlisting}[language={},numbers=none,
+  caption={tilvista\_dirs.json -- Struktur}]
+{
+  "entries": [
+    {
+      "name":        "Urlaub2025",
+      "path":        "../../Bilder/Urlaub2025",
+      "image_files": "Urlaub2025_img.dshow",
+      "all_files":   "Urlaub2025_all.catalogue",
+      "scanned_at":  "2025-08-01T14:23:00",
+      "hidden":      false
+    }
+  ]
+}
+\end{lstlisting}
+
+\datei{\_img.dshow} und \datei{\_all.catalogue} sind
+zeilenweise Dateilisten im kaivo-Verzeichnis.
+Beim Laden liest \klasse{CatalogueLoadWorker} diese
+ein und liefert sie als \klasse{QStringList}.
+
+\subsubsection{v0.5.42 Threading-Architektur}
+
+\begin{lstlisting}[style=header,
+  caption={Drei Thread-Pointer in DirDatabasePanel}]
+QThread* m_thread    = nullptr; // save / index load
+QThread* m_catThread = nullptr; // catalogue lesen
+QThread* m_updThread = nullptr; // Verzeichnis neu scannen
+\end{lstlisting}
+
+Jede Operation laeuft in einem eigenen Thread.
+Vor jeder neuen Operation wird der zugehoerige Thread
+per \methode{safeStop} entkoppelt.
+
+\begin{neuin}[title={Neu in v0.5.42: setBusy und flushPendingWrites}]
+\textbf{setBusy(bool):} Waehrend ein Katalog-Load-Thread
+laeuft, werden Save/Load/Delete/Update-Buttons und die
+Eintragsliste deaktiviert. Das verhindert konkurrierende
+Zugriffe auf \member{m\_db} (das \klasse{QJsonObject}).
+
+\textbf{flushPendingWrites():} Beim App-Beenden pumpt
+diese Methode die Event-Loop, bis der laufende Save-Thread
+fertig ist:
+\begin{lstlisting}
+void DirDatabasePanel::flushPendingWrites() {
+    if (!m_thread) return;
+    QElapsedTimer t; t.start();
+    while (m_thread && t.elapsed() < 3000)
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+}
+\end{lstlisting}
+\verb|QThread::wait()| wuerde hier deadlocken:
+Der Worker emittiert \signal{resultReady} als Queued
+Connection zurueck in den Haupt-Thread. Dieser muss seine
+Event-Loop \emph{laufen} lassen, damit das Signal
+zugestellt und \verb|quit()| aufgerufen wird.
+\verb|processEvents()| haelt genau genug der Event-Loop
+am Leben, ohne den Thread zu blockieren.
+\end{neuin}
+
+\subsubsection{Signale von DirDatabasePanel}
+
+\begin{lstlisting}[style=header]
+signals:
+    // Dateilisten geladen (aus Cache oder nach Scan)
+    void dirLoaded(const QString& absPath,
+                   const QStringList& imageFiles,
+                   const QStringList& allFiles);
+    // Aktiver Eintrag geaendert (fuer shujuko-Panel)
+    void activeEntryChanged(const QString& entryName,
+                             const QString& sourceDir);
+    // shujuko soll Datei-Existenz pruefen
+    void requestShujukoValidation();
+    // Secret Mode hat sich geaendert
+    void secretModeChanged(bool active);
+\end{lstlisting}
+
+\subsubsection{C++-Analyse: launchWorker -- DRY-Template-Helfer}
+
+\begin{lstlisting}[caption={launchWorker: generische Thread-Startfunktion}]
+template<typename Worker, typename Slot>
+static QThread* launchWorker(Worker* worker,
+                              QObject* receiver,
+                              Slot slot)
+{
+    auto* thread = new QThread;
+    worker->moveToThread(thread);
+    QObject::connect(thread, &QThread::started,
+                     worker, &Worker::run);
+    QObject::connect(worker, &Worker::resultReady,
+                     receiver, slot);
+    QObject::connect(worker, &Worker::resultReady,
+                     thread, &QThread::quit);
+    QObject::connect(worker, &Worker::resultReady,
+                     worker, &QObject::deleteLater);
+    QObject::connect(thread, &QThread::finished,
+                     thread, &QObject::deleteLater);
+    thread->start();
+    return thread;
+}
+\end{lstlisting}
+
+\textbf{Warum ein Template?} Alle Worker-Klassen haben
+denselben Thread-Start-Boilerplate. Das Template
+(\verb|typename Worker, typename Slot|) macht die Funktion
+fuer jeden Worker-Typ nutzbar ohne Code-Wiederholung
+(DRY: Don't Repeat Yourself). Der Compiler instanziiert
+fuer jeden Aufruf eine konkrete Version.
+
+\subsubsection{C++-Analyse: rawName und regex}
+
+\begin{lstlisting}[caption={rawName: Dekorations-Praefix entfernen}]
+static QString rawName(const QString& displayName) {
+    // Entfernt das "CIRCLE ""-Praefix von hidden entries
+    static const QRegularExpression prefix("^[^ ]+ ");
+    return QString(displayName).remove(prefix);
+}
+\end{lstlisting}
+
+In der Eintragsliste werden versteckte Eintraege mit
+dem Praefix \verb|"(kreis) "| versehen.
+\verb|QRegularExpression| ist Qt's moderne Regex-Klasse
+(PCRE2-basiert, Unicode-faehig). Die \verb|static|-Variable
+stellt sicher, dass die Regex nur einmal kompiliert wird.
+
+\subsubsection{Qt-Analyse: PendingCache-Struct}
+
+\begin{lstlisting}[style=header,
+  caption={PendingCache: aggregierter Zustand}]
+struct PendingCache {
+    QString path;
+    QStringList imageFiles, allFiles;
+    bool valid = false;
+} m_pending;
+\end{lstlisting}
+
+Ein anonymes Struct direkt als Member-Variable --
+das fasst zusammengehoerige Daten zusammen, ohne eine
+benannte Klasse anlegen zu muessen. Das Flag \verb|valid|
+zeigt an, ob gecachte Daten vorhanden sind, die noch
+nicht in die DB geschrieben wurden.

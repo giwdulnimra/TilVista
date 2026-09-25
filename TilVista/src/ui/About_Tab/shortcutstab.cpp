@@ -1,4 +1,4 @@
-#include "shortcutstab.h"
+#include "../shortcutstab.h"
 
 #include <QFont>
 #include <QFrame>

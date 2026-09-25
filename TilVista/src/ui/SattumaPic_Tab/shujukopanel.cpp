@@ -1,4 +1,4 @@
-#include "shujukopanel.h"
+#include "../shujukopanel.h"
 #include "core/pathutils.h"
 #include "workers/dbworkers.h"
 

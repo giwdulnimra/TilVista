@@ -1,6 +1,6 @@
-#include "madoludustab.h"
-#include "madoluduswindow.h"
-#include "videopreviewwidget.h"
+#include "../madoludustab.h"
+#include "../madoluduswindow.h"
+#include "../videopreviewwidget.h"
 #include "core/pathutils.h"
 #include "workers/scanworker.h"
 

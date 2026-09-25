@@ -3,7 +3,7 @@
   <qresource prefix="/icons">
     <!--
       tilvista.ico – application icon
-      Place the file at:  TilVista/resources/tilvista.ico
+      Place the file at:  TilVista/src/assets/tilvista.ico
       The .ico format allows multiple sizes (16x16, 32x32, 48x48, 256x256)
       all in one file, which is what Windows / windeployqt expects.
 

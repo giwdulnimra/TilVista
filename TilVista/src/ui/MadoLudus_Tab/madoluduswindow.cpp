@@ -1,5 +1,5 @@
-#include "madoluduswindow.h"
-#include "madooverlay.h"
+#include "../madoluduswindow.h"
+#include "../madooverlay.h"
 #include "core/pathutils.h"
 #include "workers/videoframesworker.h"
 

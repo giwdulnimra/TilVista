@@ -1,5 +1,5 @@
-#include "slideshowwindow.h"
-#include "shujukopanel.h"
+#include "../slideshowwindow.h"
+#include "../SattumaPic_Tab/shujukopanel.h"
 #include "core/pathutils.h"
 
 #include <QDir>
@@ -14,6 +14,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <random>
+#include <QCursor>
 
 SlideshowWindow::SlideshowWindow(const QString&     directory,
                                   const QStringList& imagePaths,
@@ -30,7 +31,6 @@ SlideshowWindow::SlideshowWindow(const QString&     directory,
 {
     setWindowTitle("TilVista · AleaVue");
     setStyleSheet("background-color: black;");
-    TV::preventSleep();
 
     const QRect scr = QGuiApplication::primaryScreen()->availableGeometry();
     if (m_fullscreen) {
@@ -82,7 +82,7 @@ void SlideshowWindow::keyPressEvent(QKeyEvent* event)
 {
     switch (event->key()) {
     case Qt::Key_Escape:
-        setCursor(Qt::ArrowCursor); TV::restoreSleep(); close(); break;
+        setCursor(Qt::ArrowCursor); close(); break;
     case Qt::Key_Right:
         changeImage(); break;
     case Qt::Key_Left:
@@ -140,7 +140,7 @@ void SlideshowWindow::displayImage(const QString& path)
         pm = pm.scaledToHeight(m_showH-18, Qt::SmoothTransformation);
     m_label->setPixmap(pm);
     m_timer->stop(); m_timer->start(kIntervalMs);
-    TV::preventSleep();
+    jiggleMouse(); // to prevent Sleepmode
 }
 
 void SlideshowWindow::goBack()
@@ -160,4 +160,11 @@ void SlideshowWindow::logError(const QString& path, const QString& err)
     QFile f(m_logPath + "/loadingerrors.log");
     if (!f.open(QIODevice::Append|QIODevice::Text)) return;
     QTextStream(&f) << "Failed: " << path << "  |  " << err << '\n';
+}
+
+void SlideshowWindow::jiggleMouse()
+{
+    QPoint pos = QCursor::pos();
+    QCursor::setPos(pos.x(), pos.y() + 1);
+    QCursor::setPos(pos.x(), pos.y());
 }
