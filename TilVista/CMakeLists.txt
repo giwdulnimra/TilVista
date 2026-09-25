@@ -46,7 +46,7 @@ set(TV_SOURCES
         src/ui/madoluduswindow.h      src/ui/madoluduswindow.cpp
         src/ui/shortcutstab.h         src/ui/shortcutstab.cpp
         src/ui/mainwindow.h           src/ui/mainwindow.cpp
-        resources/resources.qrc
+        src/assets/assets.qrc
 )
 
 # ── Windows: embed icon into .exe ─────────────────────────────────────────────
@@ -65,9 +65,9 @@ add_executable(${PROJECT_NAME} ${TV_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
-        TV_APPVERSION="${APPVERSION}"
-        TV_APPVERSION_DISPLAY="${APPVERSION_DISPLAY}"
-        TV_SEMVER="${PROJECT_VERSION}"
+        TV_APPVERSION=\"${APPVERSION}\"
+        TV_APPVERSION_DISPLAY=\"${APPVERSION_DISPLAY}\"
+        TV_SEMVER=\"${PROJECT_VERSION}\"
 )
 
 # ── Target Konfiguration (Qt) ─────────────────────────────────────────────────

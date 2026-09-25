@@ -1,4 +1,4 @@
-#pragma once
+    #pragma once
 #include <QMainWindow>
 #include <QStringList>
 
@@ -45,6 +45,7 @@ private:
     void displayImage(const QString& path);
     void goBack();
     void logError(const QString& path, const QString& error);
+    void jiggleMouse();
 
     QString     m_directory;
     QStringList m_imagePaths;

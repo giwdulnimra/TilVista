@@ -36,12 +36,6 @@ QString autoEntryName(const QString& dirPath) {
 
 const QStringList& imageSuffixes() {
     // ── Format notes ─────────────────────────────────────────────────────────
-    // .heic/.heif  – Apple format (iPhone photos). Requires:
-    //                Windows: HEVC Video Extensions (free, MS Store)
-    //                Linux:   libheif + Qt image plugin
-    //                macOS:   native, works out of the box
-    // .avif        – Requires Qt 6.5+ with qt-avif-image-plugin or libavif.
-    //                https://github.com/novomesk/qt-avif-image-plugin
     // .webp        – Supported natively since Qt 5.14.
     // .jxl         – JPEG XL; no official Qt plugin yet (2025).
     // .tga         – Targa; supported by Qt natively.
@@ -54,10 +48,6 @@ const QStringList& imageSuffixes() {
         ".tif", ".tiff",
         // Modern formats
         ".webp",   // Qt 5.14+, widely supported
-        ".avif",   // Qt 6.5+ with plugin – graceful fallback if absent
-        ".heic",   // Apple HEIC – needs OS/platform codec
-        ".heif",   // HEIF container (broader than HEIC)
-        // Less common but Qt-supported
         ".tga",    // Targa
         ".pbm", ".pgm", ".ppm",  // PBM family
         ".xbm", ".xpm",          // X11 bitmap/pixmap
@@ -68,10 +58,8 @@ const QStringList& imageSuffixes() {
 }
 
 const QStringList& videoSuffixes() {
-    // .mov – Apple QuickTime; heavily used alongside HEIC on iPhone.
-    // .hevc / .h265 – raw HEVC stream; rare as standalone file.
     static const QStringList s = {
-        ".mp4", ".mkv", ".avi", ".mov", ".wmv",
+        ".mp4", ".mkv", ".mov", ".wmv",
         ".flv", ".webm", ".m4v", ".ts", ".mts",
         ".3gp",   // Mobile video
         ".ogv",   // Ogg video
@@ -105,17 +93,6 @@ void selectInExplorer(const QString& path) {
         }
     }
     openPath(QFileInfo(path).absolutePath());
-#endif
-}
-
-void preventSleep() {
-#ifdef Q_OS_WIN
-    SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
-#endif
-}
-void restoreSleep() {
-#ifdef Q_OS_WIN
-    SetThreadExecutionState(ES_CONTINUOUS);
 #endif
 }
 
