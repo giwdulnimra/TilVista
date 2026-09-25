@@ -1,6 +1,6 @@
-#include "aleavuetab.h"
+#include "../aleavuetab.h"
 #include "dirdatabasepanel.h"
-#include "shujukopanel.h"
+#include "../SattumaPic_Tab/shujukopanel.h"
 #include "slideshowwindow.h"
 #include "core/config.h"
 #include "core/pathutils.h"

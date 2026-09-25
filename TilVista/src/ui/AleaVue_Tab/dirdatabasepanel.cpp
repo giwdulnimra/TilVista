@@ -1,4 +1,4 @@
-#include "dirdatabasepanel.h"
+#include "../dirdatabasepanel.h"
 #include "core/pathutils.h"
 #include "workers/catalogueworkers.h"
 #include "workers/dbworkers.h"

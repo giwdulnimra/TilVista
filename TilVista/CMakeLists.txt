@@ -27,25 +27,25 @@ include("${CMAKE_SOURCE_DIR}/SetupQt.cmake")
 # ── Sources ───────────────────────────────────────────────────────────────────
 set(TV_SOURCES
         src/main.cpp
-        src/core/pathutils.h          src/core/pathutils.cpp
-        src/core/config.h             src/core/config.cpp
-        src/workers/scanworker.h      src/workers/scanworker.cpp
-        src/workers/dbworkers.h       src/workers/dbworkers.cpp
-        src/workers/catalogueworkers.h src/workers/catalogueworkers.cpp
+        src/core/pathutils.h            src/core/pathutils.cpp
+        src/core/config.h               src/core/config.cpp
+        src/workers/scanworker.h        src/workers/scanworker.cpp
+        src/workers/dbworkers.h         src/workers/dbworkers.cpp
+        src/workers/catalogueworkers.h  src/workers/catalogueworkers.cpp
         src/workers/videoframesworker.h src/workers/videoframesworker.cpp
-        src/ui/previewlabel.h         src/ui/previewlabel.cpp
-        src/ui/videopreviewwidget.h   src/ui/videopreviewwidget.cpp
-        src/ui/dirbar.h               src/ui/dirbar.cpp
-        src/ui/dirdatabasepanel.h     src/ui/dirdatabasepanel.cpp
-        src/ui/shujukopanel.h         src/ui/shujukopanel.cpp
-        src/ui/aleavuetab.h           src/ui/aleavuetab.cpp
-        src/ui/sattumapictab.h        src/ui/sattumapictab.cpp
-        src/ui/slideshowwindow.h      src/ui/slideshowwindow.cpp
-        src/ui/madooverlay.h          src/ui/madooverlay.cpp
-        src/ui/madoludustab.h         src/ui/madoludustab.cpp
-        src/ui/madoluduswindow.h      src/ui/madoluduswindow.cpp
-        src/ui/shortcutstab.h         src/ui/shortcutstab.cpp
-        src/ui/mainwindow.h           src/ui/mainwindow.cpp
+        src/ui/mainwindow.h             src/ui/mainwindow.cpp
+        src/ui/dirbar.h                 src/ui/dirbar.cpp
+        src/ui/previewlabel.h           src/ui/previewlabel.cpp
+        src/ui/videopreviewwidget.h     src/ui/videopreviewwidget.cpp
+        src/ui/AleaVue_Tab/aleavuetab.h         src/ui/AleaVue_Tab/aleavuetab.cpp
+        src/ui/AleaVue_Tab/dirdatabasepanel.h   src/ui/AleaVue_Tab/dirdatabasepanel.cpp
+        src/ui/AleaVue_Tab/slideshowwindow.h    src/ui/AleaVue_Tab/slideshowwindow.cpp
+        src/ui/SattumaPic_Tab/sattumapictab.h   src/ui/SattumaPic_Tab/sattumapictab.cpp
+        src/ui/SattumaPic_Tab/shujukopanel.h    src/ui/SattumaPic_Tab/shujukopanel.cpp
+        src/ui/MadoLudus_Tab/madoludustab.h     src/ui/MadoLudus_Tab/madoludustab.cpp
+        src/ui/MadoLudus_Tab/madooverlay.h      src/ui/MadoLudus_Tab/madooverlay.cpp
+        src/ui/MadoLudus_Tab/madoluduswindow.h  src/ui/MadoLudus_Tab/madoluduswindow.cpp
+        src/ui/About_Tab/shortcutstab.h         src/ui/About_Tab/shortcutstab.cpp
         src/assets/assets.qrc
 )
 

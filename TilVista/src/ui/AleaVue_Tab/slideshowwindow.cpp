@@ -1,5 +1,5 @@
-#include "slideshowwindow.h"
-#include "shujukopanel.h"
+#include "../slideshowwindow.h"
+#include "../SattumaPic_Tab/shujukopanel.h"
 #include "core/pathutils.h"
 
 #include <QDir>

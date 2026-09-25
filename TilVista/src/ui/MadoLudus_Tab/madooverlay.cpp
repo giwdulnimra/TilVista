@@ -1,4 +1,4 @@
-#include "madooverlay.h"
+#include "../madooverlay.h"
 
 #include <QHBoxLayout>
 #include <QLabel>
