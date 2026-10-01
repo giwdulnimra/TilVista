@@ -1,5 +1,5 @@
-#include "../sattumapictab.h"
-#include "../shujukopanel.h"
+#include "sattumapictab.h"
+#include "shujukopanel.h"
 #include "../videopreviewwidget.h"
 #include "core/config.h"
 #include "core/pathutils.h"

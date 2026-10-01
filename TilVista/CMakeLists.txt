@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
-project(TilVista VERSION 0.5.42 LANGUAGES CXX)
+string(TIMESTAMP BUILD_DATE "%y%m%d")
+project(TilVista VERSION 0.5.${BUILD_DATE} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,6 +48,8 @@ set(TV_SOURCES
         src/ui/MadoLudus_Tab/madoluduswindow.h  src/ui/MadoLudus_Tab/madoluduswindow.cpp
         src/ui/About_Tab/shortcutstab.h         src/ui/About_Tab/shortcutstab.cpp
         src/assets/assets.qrc
+        src/ui/MadoLudus_Tab/mediaviewer.cpp
+        src/ui/MadoLudus_Tab/mediaviewer.h
 )
 
 # ── Windows: embed icon into .exe ─────────────────────────────────────────────

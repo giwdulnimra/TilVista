@@ -1,4 +1,4 @@
-#include "../slideshowwindow.h"
+#include "slideshowwindow.h"
 #include "../SattumaPic_Tab/shujukopanel.h"
 #include "core/pathutils.h"
 
@@ -31,6 +31,7 @@ SlideshowWindow::SlideshowWindow(const QString&     directory,
 {
     setWindowTitle("TilVista · AleaVue");
     setStyleSheet("background-color: black;");
+    TV::preventSleep();
 
     const QRect scr = QGuiApplication::primaryScreen()->availableGeometry();
     if (m_fullscreen) {
@@ -82,7 +83,7 @@ void SlideshowWindow::keyPressEvent(QKeyEvent* event)
 {
     switch (event->key()) {
     case Qt::Key_Escape:
-        setCursor(Qt::ArrowCursor); close(); break;
+        setCursor(Qt::ArrowCursor); TV::restoreSleep(); close(); break;
     case Qt::Key_Right:
         changeImage(); break;
     case Qt::Key_Left:
@@ -140,7 +141,7 @@ void SlideshowWindow::displayImage(const QString& path)
         pm = pm.scaledToHeight(m_showH-18, Qt::SmoothTransformation);
     m_label->setPixmap(pm);
     m_timer->stop(); m_timer->start(kIntervalMs);
-    jiggleMouse(); // to prevent Sleepmode
+    //jiggleMouse(); // to prevent Sleepmode
 }
 
 void SlideshowWindow::goBack()

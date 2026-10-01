@@ -96,4 +96,16 @@ void selectInExplorer(const QString& path) {
 #endif
 }
 
+void preventSleep() {
+#ifdef Q_OS_WIN
+    SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
+#endif
+}
+
+void restoreSleep() {
+#ifdef Q_OS_WIN
+    SetThreadExecutionState(ES_CONTINUOUS);
+#endif
+}
+
 } // namespace TV

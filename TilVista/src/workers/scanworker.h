@@ -1,4 +1,5 @@
-#pragma once
+#ifndef TILVISTA_SCANWORKER_H
+#define TILVISTA_SCANWORKER_H
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -15,3 +16,5 @@ signals:
 private:
     QString m_directory;
 };
+
+#endif //TILLVISTA_SCANWORKER_H

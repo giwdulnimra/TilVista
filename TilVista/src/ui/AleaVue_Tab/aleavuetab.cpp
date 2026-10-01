@@ -1,4 +1,4 @@
-#include "../aleavuetab.h"
+#include "aleavuetab.h"
 #include "dirdatabasepanel.h"
 #include "../SattumaPic_Tab/shujukopanel.h"
 #include "slideshowwindow.h"
