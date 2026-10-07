@@ -3,12 +3,14 @@
 
 #include <QFileInfo>
 #include <QWidget>
+#include <QLabel>
 #include <QMediaPlayer>
 #include <QVideoWidget>
 #include <QAudioOutput>
 #include <QImageReader>
 #include <QPixmap>
-#include <QResizeEvent>
+//#include <QResizeEvent>
+#include <QGuiApplication>
 #include <QScreen>
 #include <QTimer>
 #include <QUrl>
@@ -46,12 +48,11 @@ MediaViewer::MediaViewer(QWidget* p) : QWidget(p)
         m_showW = scr.width() / 2;
         m_showH = scr.height() / 2;
         setGeometry(0, 0, m_showW, m_showH);
-
-        m_imageTimer = new QTimer(this);
-        m_imageTimer->setInterval(m_imageDurationMS);
-        connect(m_imageTimer, &QTimer::timeout, this, &MediaViewer::imageTimeout);
-
     }
+
+    m_imageTimer = new QTimer(this);
+    m_imageTimer->setInterval(m_imageDurationMS);
+    connect(m_imageTimer, &QTimer::timeout, this, &MediaViewer::imageTimeout);
 }
 MediaViewer::~MediaViewer(){ stop(); TV::restoreSleep(); }
 

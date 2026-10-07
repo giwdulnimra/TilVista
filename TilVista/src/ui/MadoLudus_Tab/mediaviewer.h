@@ -1,16 +1,18 @@
 #ifndef TILVISTA_MEDIAVIEWER_H
 #define TILVISTA_MEDIAVIEWER_H
 #include <QWidget>
-#include <QLabel>
-#include <QMediaPlayer>
-#include <QVideoWidget>
+class QLabel;
+class QTimer;
+class QMediaPlayer;
+class QVideoWidget;
+class QAudioOutput;
 
 class MediaViewer : public QWidget
 {
     Q_OBJECT
 public:
     explicit MediaViewer(QWidget *parent = nullptr);
-    ~MediaViewer(); //??
+    ~MediaViewer() override; //??
 
     void showFile(const QString &path);   // räumt intern zuerst per stop() auf, entscheidet dann Bild vs. Video
     void stop();                           // Timer/Video stoppen, KEIN finished()

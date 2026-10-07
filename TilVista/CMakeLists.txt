@@ -44,12 +44,11 @@ set(TV_SOURCES
         src/ui/SattumaPic_Tab/sattumapictab.h   src/ui/SattumaPic_Tab/sattumapictab.cpp
         src/ui/SattumaPic_Tab/shujukopanel.h    src/ui/SattumaPic_Tab/shujukopanel.cpp
         src/ui/MadoLudus_Tab/madoludustab.h     src/ui/MadoLudus_Tab/madoludustab.cpp
-        src/ui/MadoLudus_Tab/madooverlay.h      src/ui/MadoLudus_Tab/madooverlay.cpp
         src/ui/MadoLudus_Tab/madoluduswindow.h  src/ui/MadoLudus_Tab/madoluduswindow.cpp
+        src/ui/MadoLudus_Tab/mediaviewer.cpp    src/ui/MadoLudus_Tab/mediaviewer.h
+        src/ui/MadoLudus_Tab/madooverlay.h      src/ui/MadoLudus_Tab/madooverlay.cpp
         src/ui/About_Tab/shortcutstab.h         src/ui/About_Tab/shortcutstab.cpp
         src/assets/assets.qrc
-        src/ui/MadoLudus_Tab/mediaviewer.cpp
-        src/ui/MadoLudus_Tab/mediaviewer.h
 )
 
 # ── Windows: embed icon into .exe ─────────────────────────────────────────────

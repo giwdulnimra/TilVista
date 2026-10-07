@@ -16,7 +16,7 @@
 #include <random>
 #include <QCursor>
 
-SlideshowWindow::SlideshowWindow(const QString&     directory,
+SlideshowWindow::SlideshowWindow(const QString&      directory,
                                   const QStringList& imagePaths,
                                   const QString&     logPath,
                                   bool               logErrors,
