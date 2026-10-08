@@ -269,10 +269,6 @@ void MadoludusTab::openWindow(const QStringList& files)
     cfg.secretMode = m_secretMode;
     m_window = new MadoludusWindow(files, cfg);
 
-    // Start at half screen size, top-left corner
-    const QRect scr = QGuiApplication::primaryScreen()->availableGeometry();
-    m_window->setGeometry(0, 0, scr.width() / 2, scr.height() / 2);
-
     connect(m_window, &MadoludusWindow::windowClosed,
             this, &MadoludusTab::onWindowClosed);
 

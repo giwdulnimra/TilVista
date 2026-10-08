@@ -2,18 +2,21 @@
 #include "core/pathutils.h"
 
 #include <QFileInfo>
-#include <QWidget>
+#include <QGuiApplication>
+#include <QImageReader>
 #include <QLabel>
+#include <QResizeEvent>
+#include <QScreen>
+#include <QStackedLayout>
+#include <QTimer>
+#include <QUrl>
+#ifndef TV_NO_MULTIMEDIA
 #include <QMediaPlayer>
 #include <QVideoWidget>
 #include <QAudioOutput>
-#include <QImageReader>
+#endif // TV_NO_MULTIMEDIA
 #include <QPixmap>
-//#include <QResizeEvent>
-#include <QGuiApplication>
-#include <QScreen>
-#include <QTimer>
-#include <QUrl>
+#include <QWidget>
 
 
 MediaViewer::MediaViewer(QWidget* p) : QWidget(p)
@@ -21,22 +24,36 @@ MediaViewer::MediaViewer(QWidget* p) : QWidget(p)
     setWindowTitle("TilVista · MadoLudus");
     setStyleSheet("background-color: black;");
 
+    m_stack = new QStackedLayout(this);
+    m_stack->setContentsMargins(0, 0, 0, 0);
+
     m_imageLabel = new QLabel(this);
+    m_imageLabel->setAlignment(Qt::AlignCenter);
+    m_imageLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    // Ignored -> enables shrinking the window
+    m_stack->addWidget(m_imageLabel);
+
+    m_imageTimer = new QTimer(this);
+    //m_imageTimer->setInterval(m_imageDurationMS);
+    m_imageTimer->setSingleShot(true);
+    connect(m_imageTimer, &QTimer::timeout, this, &MediaViewer::imageTimeout);
+
 #ifndef TV_NO_MULTIMEDIA
     m_player = new QMediaPlayer(this);
     m_audio = new QAudioOutput(this);
     m_videoW = new QVideoWidget(this);
-
     m_player->setAudioOutput(m_audio);
     m_player->setVideoOutput(m_videoW);
+    m_stack->addWidget(m_videoW);
 
     connect(m_player, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
         if (status == QMediaPlayer::EndOfMedia) { emit finished(); }
     });
 #endif
 
+    m_stack->setCurrentWidget((m_imageLabel));
     TV::preventSleep();
-
+    /*
     const QRect scr = QGuiApplication::primaryScreen()->availableGeometry();
     if (m_fullscreen)
     {
@@ -49,10 +66,7 @@ MediaViewer::MediaViewer(QWidget* p) : QWidget(p)
         m_showH = scr.height() / 2;
         setGeometry(0, 0, m_showW, m_showH);
     }
-
-    m_imageTimer = new QTimer(this);
-    m_imageTimer->setInterval(m_imageDurationMS);
-    connect(m_imageTimer, &QTimer::timeout, this, &MediaViewer::imageTimeout);
+    */
 }
 MediaViewer::~MediaViewer(){ stop(); TV::restoreSleep(); }
 
@@ -65,22 +79,16 @@ void MediaViewer::showFile(const QString& path)
     if (TV::imageSuffixes().contains(fileExt))
     {
         loadImage(path);
-#ifndef TV_NO_MULTIMEDIA
-        if (m_videoW) m_videoW->hide();
-        if (m_imageLabel) m_imageLabel->show();
-#endif //TV_NO_MULTIMEDIA
     }
 #ifndef TV_NO_MULTIMEDIA
     else if (TV::videoSuffixes().contains(fileExt))
     {
         loadVideo(path);
-        if (m_imageLabel) m_imageLabel->hide();
-        if (m_videoW) m_videoW->show();
     }
 #endif //TV_NO_MULTIMEDIA
     else
     {
-        emit finished(); //finished(path);
+        QTimer::singleShot(10, this, [this] { emit finished(); });
     }
 }
 
@@ -97,47 +105,55 @@ void MediaViewer::togglePause()
 {
     m_paused = !m_paused;
 }
-
-bool MediaViewer::isPaused() const
-{
-    return m_paused;
-}
-
-void MediaViewer::setImageDurationMS(int newMS)
-{
-    m_imageDurationMS = newMS;
-}
+bool MediaViewer::isPaused() const { return m_paused; }
+void MediaViewer::setImageDurationMS(int newMS) { m_imageDurationMS = newMS; }
 
 void MediaViewer::loadImage(const QString& path)
 {
-    // why variables with:  m_<> ??
+    const QSize maxSize = QGuiApplication::primaryScreen()->availableGeometry().size();
+
     QImageReader reader(path);
     const QSize orig = reader.size();
-    if (orig.isValid() && (orig.width() > m_showW || orig.height() > m_showH)) {
-        const double s = qMin(static_cast<double>(m_showW)/orig.width(),
-                              static_cast<double>(m_showH)/orig.height());
-        reader.setScaledSize(QSize(static_cast<int>(orig.width() * s), static_cast<int>(orig.height() * s)));
+    if (orig.isValid() && (orig.width() > maxSize.width() || orig.height() > maxSize.height())) {
+        reader.setScaledSize(orig.scaled(maxSize, Qt::KeepAspectRatio));
     }
+
     const QImage img = reader.read();
-    if (img.isNull()) { emit finished(); return; }
-    QPixmap pm = QPixmap::fromImage(img);
-    if (static_cast<double>(pm.width())/static_cast<double>(pm.height()) > m_ratio)
-        pm = pm.scaledToWidth(m_showW, Qt::SmoothTransformation);
-    else
-        pm = pm.scaledToHeight(m_showH-18, Qt::SmoothTransformation);
-    m_imageLabel->setPixmap(pm);
-    m_imageTimer->stop(); m_imageTimer->start(m_imageDurationMS);
+    if (img.isNull())
+    {
+        QTimer::singleShot(10, this, [this] { emit finished(); });
+        return;
+    }
+    m_pixmap = QPixmap::fromImage(img);
+    m_stack->setCurrentWidget(m_imageLabel);
+    updateImageLabel();
+    m_imageTimer->start(m_imageDurationMS); // oneshot
     //jiggleMouse(); // to prevent Sleep-mode
 }
 
 void MediaViewer::loadVideo(const QString& path) const
 {
 #ifndef TV_NO_MULTIMEDIA
+    m_stack->setCurrentWidget(m_videoW);
     if (m_player)
     {
         m_player->stop();
         m_player->setSource(QUrl::fromLocalFile(path));
         m_player->play();
     }
+#else
+    Q_UNUSED(path)
 #endif // TV_NO_MULTIMEDIA
+}
+
+void MediaViewer::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    updateImageLabel();
+}
+
+void MediaViewer::updateImageLabel()
+{
+    if (m_pixmap.isNull()) { return; }
+    m_imageLabel->setPixmap(m_pixmap.scaled(size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
 }

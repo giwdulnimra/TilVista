@@ -34,15 +34,10 @@ MadoludusWindow::MadoludusWindow(const QStringList& mediaFiles,
     setMinimumSize(640, 400);
 
     const QRect scr = QGuiApplication::primaryScreen()->availableGeometry();
-    int showW, showH;
     if (m_cfg.fullscreen) {
-        showW = scr.width(); // <!! m_showW/H aufräumen
-        showH = scr.height();
         setGeometry(scr);
     } else {
-        showW = scr.width() / 2;
-        showH = scr.height() / 2;
-        setGeometry(0, 0, showW, showH);
+        setGeometry(QRect(scr.topLeft(), QSize(scr.width()/2, scr.height()/2)));
     }
 
     m_playlist = m_mediaFiles;
