@@ -25,5 +25,7 @@ QStringList allMediaSuffixes();
 
 void openPath(const QString& path);
 void selectInExplorer(const QString& path);
+void preventSleep();
+void restoreSleep();
 
 } // namespace TV

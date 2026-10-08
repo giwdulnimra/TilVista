@@ -51,7 +51,7 @@ private:
     QStringList m_imagePaths;
     QString     m_logPath;
     bool        m_logErrors;
-    bool        m_fullscreen = false;   ///< v0.5.42
+    bool        m_fullscreen = false;
     ShujukoPanel* m_shujuko;
 
     QLabel* m_label = nullptr;
